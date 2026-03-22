@@ -47,7 +47,7 @@ PerspectiveCamera::PerspectiveCamera(WebGPUDeviceGlobalState *s) : Camera(s) {}
 void PerspectiveCamera::commitParameters()
 {
   Camera::commitParameters();
-  m_fovy = getParam<float>("fovy", static_cast<float>(M_PI / 2.0));
+  m_fovy = getParam<float>("fovy", static_cast<float>(M_PI / 3.0));
   m_aspect = getParam<float>("aspect", 1.f);
 }
 
