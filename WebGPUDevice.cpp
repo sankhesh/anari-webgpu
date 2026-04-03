@@ -10,8 +10,44 @@
 #include "frame/Frame.h"
 #include "spatial_field/SpatialField.h"
 
+#include <webgpu/webgpu.h>
 
 #include "anari_library_webgpu_queries.h"
+
+// Context structs for Dawn async callbacks
+struct AdapterResult {
+  WGPUAdapter adapter{nullptr};
+  bool done{false};
+};
+struct DeviceResult {
+  WGPUDevice device{nullptr};
+  bool done{false};
+};
+// Free functions for Dawn async callbacks
+namespace {
+void adapterCallback(WGPURequestAdapterStatus status, WGPUAdapter adapter,
+                     WGPUStringView message, void *userdata1, void *userdata2) {
+  auto *result = static_cast<AdapterResult *>(userdata1);
+  if (status == WGPURequestAdapterStatus_Success) {
+    result->adapter = adapter;
+  }
+  result->done = true;
+}
+void deviceCallback(WGPURequestDeviceStatus status, WGPUDevice device,
+                    WGPUStringView message, void *userdata1, void *userdata2) {
+  auto *result = static_cast<DeviceResult *>(userdata1);
+  if (status == WGPURequestDeviceStatus_Success) {
+    result->device = device;
+  }
+  result->done = true;
+}
+void uncapturedErrorCallback(WGPUDevice const * /*device*/, WGPUErrorType type,
+                             WGPUStringView message, void * /*userdata1*/,
+                             void * /*userdata2*/) {
+  fprintf(stderr, "WebGPU error (%d): %.*s\n", (int)type, (int)message.length,
+          message.data);
+}
+} // namespace
 
 namespace anari_webgpu {
 
@@ -193,7 +229,133 @@ void WebGPUDevice::initDevice() {
 }
 
 void WebGPUDevice::initWebGPU() {
-  // TODO: implement WebGPU initialization
+  auto *state = deviceState();
+
+  // --- External handle path ---
+  // If an external WGPUDevice was provided, adopt it without creating our own.
+  // This enables resource sharing: GPU buffers and textures created by the
+  // external owner are directly usable by this ANARI device and vice versa.
+  if (m_externalDevice) {
+    state->wgpuDevice = (WGPUDevice)m_externalDevice;
+    state->ownsDevice = false;
+
+    if (m_externalQueue) {
+      state->wgpuQueue = (WGPUQueue)m_externalQueue;
+      state->ownsQueue = false;
+    } else {
+      // Get the default queue from the external device
+      state->wgpuQueue = wgpuDeviceGetQueue(state->wgpuDevice);
+      state->ownsQueue = true;
+    }
+
+    if (m_externalInstance) {
+      state->wgpuInstance = (WGPUInstance)m_externalInstance;
+      state->ownsInstance = false;
+    }
+    if (m_externalAdapter) {
+      state->wgpuAdapter = (WGPUAdapter)m_externalAdapter;
+      state->ownsAdapter = false;
+    }
+
+    reportMessage(ANARI_SEVERITY_DEBUG,
+                  "WebGPU device initialized with external handles "
+                  "(device=%p, queue=%p)",
+                  state->wgpuDevice, state->wgpuQueue);
+    return;
+  }
+
+  // --- Internal creation path ---
+  // Create our own WebGPU instance, adapter, and device.
+
+  WGPUInstanceDescriptor instanceDesc{};
+  instanceDesc.nextInChain = nullptr;
+  state->wgpuInstance = wgpuCreateInstance(&instanceDesc);
+  state->ownsInstance = true;
+
+  if (!state->wgpuInstance) {
+    reportMessage(ANARI_SEVERITY_WARNING,
+                  "Failed to create WebGPU instance. "
+                  "Falling back to software rasterization.");
+    return;
+  }
+
+  // Request adapter (synchronous pattern using callbacks)
+  AdapterResult adapterResult;
+
+  WGPURequestAdapterOptions adapterOpts{};
+  adapterOpts.nextInChain = nullptr;
+  adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
+  adapterOpts.compatibleSurface = nullptr;
+  adapterOpts.forceFallbackAdapter = false;
+
+  WGPURequestAdapterCallbackInfo adapterCallbackInfo{};
+  adapterCallbackInfo.nextInChain = nullptr;
+  adapterCallbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+  adapterCallbackInfo.callback = adapterCallback;
+  adapterCallbackInfo.userdata1 = &adapterResult;
+  adapterCallbackInfo.userdata2 = nullptr;
+  wgpuInstanceRequestAdapter(state->wgpuInstance, &adapterOpts,
+                             adapterCallbackInfo);
+
+#if !defined(__EMSCRIPTEN__)
+  while (!adapterResult.done) {
+    wgpuInstanceProcessEvents(state->wgpuInstance);
+  }
+#endif
+
+  if (!adapterResult.adapter) {
+    reportMessage(ANARI_SEVERITY_WARNING,
+                  "Failed to get WebGPU adapter. "
+                  "Falling back to software rasterization.");
+    return;
+  }
+  state->wgpuAdapter = adapterResult.adapter;
+  state->ownsAdapter = true;
+
+  // Request device
+  DeviceResult deviceResult;
+
+  WGPUDeviceDescriptor deviceDesc{};
+  deviceDesc.nextInChain = nullptr;
+
+  deviceDesc.label =
+      WGPUStringView{"anari_webgpu_device", strlen("anari_webgpu_device")};
+  deviceDesc.requiredFeatureCount = 0;
+  deviceDesc.requiredLimits = nullptr;
+  deviceDesc.defaultQueue.nextInChain = nullptr;
+  deviceDesc.defaultQueue.label =
+      WGPUStringView{"anari_webgpu_queue", strlen("anari_webgpu_queue")};
+  deviceDesc.uncapturedErrorCallbackInfo.nextInChain = nullptr;
+  deviceDesc.uncapturedErrorCallbackInfo.callback = uncapturedErrorCallback;
+  deviceDesc.uncapturedErrorCallbackInfo.userdata1 = nullptr;
+  deviceDesc.uncapturedErrorCallbackInfo.userdata2 = nullptr;
+
+  WGPURequestDeviceCallbackInfo deviceCallbackInfo{};
+  deviceCallbackInfo.nextInChain = nullptr;
+  deviceCallbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+  deviceCallbackInfo.callback = deviceCallback;
+  deviceCallbackInfo.userdata1 = &deviceResult;
+  deviceCallbackInfo.userdata2 = nullptr;
+  wgpuAdapterRequestDevice(state->wgpuAdapter, &deviceDesc, deviceCallbackInfo);
+
+#if !defined(__EMSCRIPTEN__)
+  while (!deviceResult.done) {
+    wgpuInstanceProcessEvents(state->wgpuInstance);
+  }
+#endif
+
+  if (!deviceResult.device) {
+    reportMessage(ANARI_SEVERITY_WARNING,
+                  "Failed to get WebGPU device. "
+                  "Falling back to software rasterization.");
+    return;
+  }
+  state->wgpuDevice = deviceResult.device;
+  state->ownsDevice = true;
+  state->wgpuQueue = wgpuDeviceGetQueue(state->wgpuDevice);
+  state->ownsQueue = true;
+
+  reportMessage(ANARI_SEVERITY_DEBUG, "WebGPU device initialized successfully");
 }
 
 void WebGPUDevice::deviceCommitParameters() {
