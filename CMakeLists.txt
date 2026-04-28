@@ -163,6 +163,14 @@ anari_generate_queries(
 
 # Install
 
+
+# Tests
+option(BUILD_TESTS "Build test executables" ON)
+if(BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
 install(
   TARGETS ${PROJECT_NAME}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
