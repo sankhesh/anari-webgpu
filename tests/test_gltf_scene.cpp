@@ -1,6 +1,6 @@
 // Copyright 2026 The anari-webgpu Authors
 // SPDX-License-Identifier: Apache-2.0
-// Integration test: glTF-style scene setup with instancing and multi-material
+// Integration test: glTF-stle scene setup with instancing and multi-material
 #include <anari/anari.h>
 #include <cassert>
 #include <cmath>
