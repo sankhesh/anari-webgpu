@@ -4,7 +4,7 @@
 #include <anari/anari.h>
 #include <cassert>
 #include <cstdio>
-#include <cstdlib>  // BUG: should be <cstring>
+#include <cstring>
 static void statusFunc(const void *, ANARIDevice, ANARIObject, ANARIDataType, ANARIStatusSeverity, ANARIStatusCode, const char *) {}
 static ANARIDevice createTestDevice() {
   ANARILibrary lib = anariLoadLibrary("webgpu", statusFunc, nullptr); assert(lib);
