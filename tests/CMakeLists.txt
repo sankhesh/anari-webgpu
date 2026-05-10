@@ -13,6 +13,7 @@ set(TEST_SOURCES
   test_cubemap.cpp
   test_gltf_scene.cpp
   test_multi_light_rendering.cpp
+  test_pbr_rendering.cpp
 )
 
 foreach(test_src ${TEST_SOURCES})
