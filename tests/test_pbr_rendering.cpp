@@ -114,5 +114,6 @@ static void test_emissive_material() {
 int main() {
   printf("=== PBR Rendering Tests ===\n");
   test_pbr_roughness_sweep(); test_pbr_metallic(); test_pbr_normal_map(); test_emissive_material();
+  // TODO: add test for clearcoat and sheen PBR extensions
   printf("All PBR rendering tests passed.\n"); return 0;
 }
