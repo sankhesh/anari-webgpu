@@ -109,7 +109,7 @@ static void test_volume_render_to_frame() {
   anariRenderFrame(dev,frame); anariFrameReady(dev,frame,ANARI_WAIT);
   uint32_t fw,fh; ANARIDataType ft;
   const void *px=anariMapFrame(dev,frame,"channel.color",&fw,&fh,&ft);
-  assert(px && "Volume render should produce valid framebuffer");
+  assert(px > 0 && "Volume render should produce valid framebuffer");
   anariUnmapFrame(dev,frame,"channel.color");
   anariRelease(dev,frame); anariRelease(dev,ren); anariRelease(dev,cam);
   anariRelease(dev,world); anariRelease(dev,vArr); anariRelease(dev,vol);
