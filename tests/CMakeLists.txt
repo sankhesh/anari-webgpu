@@ -22,4 +22,7 @@ foreach(test_src ${TEST_SOURCES})
   target_link_libraries(${test_name} PRIVATE anari::anari)
   target_compile_features(${test_name} PRIVATE cxx_std_17)
   add_test(NAME ${test_name} COMMAND ${test_name})
+  set_tests_properties(${test_name} PROPERTIES
+    ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}"
+  )
 endforeach()
