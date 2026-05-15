@@ -16,16 +16,31 @@ struct Material : public Object
       std::string_view subtype, WebGPUDeviceGlobalState *s);
 };
 
+enum class AlphaMode { OPAQUE, BLEND, MASK };
+
 struct MatteMaterial : public Material
 {
   MatteMaterial(WebGPUDeviceGlobalState *s);
   void commitParameters() override;
   bool isValid() const override;
 
+  float4 evalColor(float2 uv) const;
+
+  float evalOpacity(float2 uv, float colorAlpha) const;
+
   float4 color() const;
+
+  AlphaMode alphaMode() const;
 
  private:
   float4 m_color{0.8f, 0.8f, 0.8f, 1.f};
+  helium::IntrusivePtr<Sampler> m_colorSampler;
+
+  float m_opacity{1.f};
+  helium::IntrusivePtr<Sampler> m_opacitySampler;
+
+  AlphaMode m_alphaMode{AlphaMode::OPAQUE};
+  float m_alphaCutoff{0.5f};
 };
 
 } // namespace anari_webgpu
