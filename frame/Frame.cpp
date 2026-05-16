@@ -1018,6 +1018,7 @@ void Frame::softwareRasterize()
       const float *positions = geom->vertexPositions();
       const float *normals = geom->vertexNormals();
       const float *colors = geom->vertexColors();
+      const float *texcoords = geom->vertexTexCoords();
       const uint32_t *indices = geom->indices();
       uint32_t numTris = geom->numTriangles();
 
@@ -1052,6 +1053,13 @@ void Frame::softwareRasterize()
           faceNormal = linalg::normalize((n0 + n1 + n2) / 3.f);
         } else {
           faceNormal = linalg::normalize(linalg::cross(p1 - p0, p2 - p0));
+        }
+
+        float2 uv0 = {0.f, 0.f}, uv1 = {0.f, 0.f}, uv2 = {0.f, 0.f};
+        if (texcoords) {
+          uv0 = {texcoords[i0 * 2], texcoords[i0 * 2 + 1]};
+          uv1 = {texcoords[i1 * 2], texcoords[i1 * 2 + 1]};
+          uv2 = {texcoords[i2 * 2], texcoords[i2 * 2 + 1]};
         }
 
         // Vertex colors
@@ -1126,11 +1134,34 @@ void Frame::softwareRasterize()
               float depth = w0 * scr0.z + w1 * scr1.z + w2 * scr2.z;
               uint32_t idx = py * m_size.x + px;
               if (depth < m_depthBuffer[idx]) {
-                m_depthBuffer[idx] = depth;
-                float4 color = c0 * w0 + c1 * w1 + c2 * w2;
+                float2 uv = {
+                    uv0.x * w0 + uv1.x * w1 + uv2.x * w2,
+                    uv0.y * w0 + uv1.y * w1 + uv2.y * w2};
+
+                float4 color;
+                if (mat) {
+                  float4 matEval = mat->evalColor(uv);
+                  if (colors) {
+                    float4 vc = c0 * w0 + c1 * w1 + c2 * w2;
+                    color = {matEval.x * vc.x, matEval.y * vc.y,
+                        matEval.z * vc.z, matEval.w * vc.w};
+                  } else {
+                    color = matEval;
+                  }
+
+                  float opacity = mat->evalOpacity(uv, color.w);
+                  if (opacity <= 0.f)
+                    continue;
+                  color.w = opacity;
+                } else {
+                  color = c0 * w0 + c1 * w1 + c2 * w2;
+                }
+
                 color.x *= lighting;
                 color.y *= lighting;
                 color.z *= lighting;
+
+                m_depthBuffer[idx] = depth;
                 writeSample(px, py, PixelSample(color, depth));
               }
             }
