@@ -5,7 +5,8 @@
     "dependencies": [
       "anari_core_1_0",
       "anari_core_objects_base_1_0",
-      "khr_instance_transform"
+      "khr_instance_transform",
+      "khr_material_matte"
     ]
   },
   "objects": [
@@ -135,10 +136,35 @@
           "description": "vertex colors (vec4f)"
         },
         {
+          "name": "vertex.attribute0",
+          "types": ["ANARI_ARRAY1D"],
+          "tags": [],
+          "description": "vertex texture coordinates (vec2f)"
+        },
+        {
           "name": "primitive.index",
           "types": ["ANARI_ARRAY1D"],
           "tags": [],
           "description": "triangle index buffer (uvec3)"
+        }
+      ]
+    },
+    {
+      "type": "ANARI_SAMPLER",
+      "name": "image2D",
+      "parameters": [
+        {
+          "name": "image",
+          "types": ["ANARI_ARRAY2D"],
+          "tags": ["required"],
+          "description": "2D image data"
+        },
+        {
+          "name": "inAttribute",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "attribute0",
+          "description": "vertex attribute to use as texture coordinate"
         }
       ]
     },
@@ -148,10 +174,31 @@
       "parameters": [
         {
           "name": "color",
-          "types": ["ANARI_FLOAT32_VEC4"],
+          "types": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4", "ANARI_SAMPLER"],
           "tags": [],
           "default": [0.8, 0.8, 0.8, 1.0],
-          "description": "diffuse color"
+          "description": "diffuse color (constant, per-vertex, or from sampler)"
+        },
+        {
+          "name": "opacity",
+          "types": ["ANARI_FLOAT32", "ANARI_SAMPLER"],
+          "tags": [],
+          "default": 1.0,
+          "description": "opacity value or sampler"
+        },
+        {
+          "name": "alphaMode",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "opaque",
+          "description": "alpha compositing mode: opaque, blend, or mask"
+        },
+        {
+          "name": "alphaCutoff",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 0.5,
+          "description": "threshold for mask alpha mode"
         }
       ]
     },
