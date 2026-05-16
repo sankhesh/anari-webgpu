@@ -24,6 +24,7 @@ void TriangleGeometry::commitParameters()
   m_vertex_position = getParamObject<Array1D>("vertex.position");
   m_vertex_color = getParamObject<Array1D>("vertex.color");
   m_vertex_normal = getParamObject<Array1D>("vertex.normal");
+  m_vertex_attribute0 = getParamObject<Array1D>("vertex.attribute0");
   m_index = getParamObject<Array1D>("primitive.index");
 
   if (!m_vertex_position) {
@@ -55,6 +56,13 @@ const float *TriangleGeometry::vertexColors() const
 const float *TriangleGeometry::vertexNormals() const
 {
   return m_vertex_normal ? (const float *)m_vertex_normal->begin() : nullptr;
+}
+
+const float *TriangleGeometry::vertexTexCoords() const
+{
+  return m_vertex_attribute0
+      ? (const float *)m_vertex_attribute0->begin()
+      : nullptr;
 }
 
 const uint32_t *TriangleGeometry::indices() const
