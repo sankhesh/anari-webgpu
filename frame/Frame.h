@@ -59,6 +59,7 @@ struct Frame : public helium::BaseFrame
 
   // Software rasterizer fallback for basic rendering
   void softwareRasterize();
+  void softwareRaymarchVolume();
 
   //// Data ////
 
@@ -84,7 +85,7 @@ struct Frame : public helium::BaseFrame
   // post-processing. External WebGPU code sharing the same WGPUDevice can
   // bind these buffers in their own compute/render pipelines.
   WGPUBuffer m_colorStorageBuf{nullptr};   // RGBA32Float per pixel
-  WGPUBuffer m_depthStorageBuf{nullptr};   // Float32 per pixel
+  WGPUBuffer m_depthStorageBuf{nullptr};
   WGPUBuffer m_readbackBuffer{nullptr};    // For CPU readback
 
   // Clear pass
@@ -92,10 +93,13 @@ struct Frame : public helium::BaseFrame
   WGPUShaderModule m_clearShader{nullptr};
   WGPUBindGroupLayout m_clearBGL{nullptr};
 
-  // Rasterize pass
   WGPUComputePipeline m_rasterPipeline{nullptr};
   WGPUShaderModule m_rasterShader{nullptr};
   WGPUBindGroupLayout m_rasterBGL{nullptr};
+
+  WGPUComputePipeline m_pbrPipeline{nullptr};
+  WGPUShaderModule m_pbrShader{nullptr};
+  WGPUBindGroupLayout m_pbrBGL{nullptr};
 
   bool m_gpuResourcesInitialized{false};
 };
