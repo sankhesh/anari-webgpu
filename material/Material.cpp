@@ -3,6 +3,7 @@
 
 #include "Material.h"
 #include <algorithm>
+#include <cmath>
 
 namespace anari_webgpu {
 
@@ -13,6 +14,8 @@ Material *Material::createInstance(
 {
   if (subtype == "matte")
     return new MatteMaterial(s);
+  if (subtype == "physicallyBased")
+    return new PhysicallyBasedMaterial(s);
   return (Material *)new UnknownObject(ANARI_MATERIAL, s);
 }
 
@@ -28,7 +31,7 @@ void MatteMaterial::commitParameters()
   m_opacity = getParam<float>("opacity", 1.f);
   m_opacitySampler = getParamObject<Sampler>("opacity");
 
-  auto mode = getParam<std::string>("alphaMode", "opaque");
+  auto mode = getParamString("alphaMode", "opaque");
   if (mode == "blend")
     m_alphaMode = AlphaMode::BLEND;
   else if (mode == "mask")
@@ -79,6 +82,125 @@ float4 MatteMaterial::color() const
 AlphaMode MatteMaterial::alphaMode() const
 {
   return m_alphaMode;
+}
+
+PhysicallyBasedMaterial::PhysicallyBasedMaterial(WebGPUDeviceGlobalState *s)
+    : Material(s)
+{}
+
+void PhysicallyBasedMaterial::commitParameters()
+{
+  m_baseColor =
+      getParam<float4>("baseColor", float4(0.8f, 0.8f, 0.8f, 1.f));
+  m_baseColorSampler = getParamObject<Sampler>("baseColor");
+
+  m_metallic = getParam<float>("metallic", 0.f);
+  m_roughness = getParam<float>("roughness", 1.f);
+  m_metallicRoughnessSampler = getParamObject<Sampler>("metallicRoughness");
+
+  m_emissive = getParam<float3>("emissive", float3(0.f, 0.f, 0.f));
+  m_emissiveStrength = getParam<float>("emissiveStrength", 1.f);
+  m_emissiveSampler = getParamObject<Sampler>("emissive");
+
+  m_normalSampler = getParamObject<Sampler>("normal");
+  m_occlusionSampler = getParamObject<Sampler>("occlusion");
+
+  m_opacity = getParam<float>("opacity", 1.f);
+
+  auto mode = getParamString("alphaMode", "opaque");
+  if (mode == "blend")
+    m_alphaMode = AlphaMode::BLEND;
+  else if (mode == "mask")
+    m_alphaMode = AlphaMode::MASK;
+  else
+    m_alphaMode = AlphaMode::OPAQUE;
+
+  m_alphaCutoff = getParam<float>("alphaCutoff", 0.5f);
+}
+
+bool PhysicallyBasedMaterial::isValid() const
+{
+  return true;
+}
+
+float4 PhysicallyBasedMaterial::baseColor() const
+{
+  return m_baseColor;
+}
+
+float PhysicallyBasedMaterial::metallic() const
+{
+  return m_metallic;
+}
+
+float PhysicallyBasedMaterial::roughness() const
+{
+  return m_roughness;
+}
+
+float3 PhysicallyBasedMaterial::emissive() const
+{
+  return m_emissive;
+}
+
+float PhysicallyBasedMaterial::emissiveStrength() const
+{
+  return m_emissiveStrength;
+}
+
+float PhysicallyBasedMaterial::opacity() const
+{
+  return m_opacity;
+}
+
+AlphaMode PhysicallyBasedMaterial::alphaMode() const
+{
+  return m_alphaMode;
+}
+
+float PhysicallyBasedMaterial::alphaCutoff() const
+{
+  return m_alphaCutoff;
+}
+
+float4 PhysicallyBasedMaterial::evalBaseColor(float2 uv) const
+{
+  if (m_baseColorSampler && m_baseColorSampler->isValid())
+    return m_baseColorSampler->eval(uv);
+  return m_baseColor;
+}
+
+float2 PhysicallyBasedMaterial::evalMetallicRoughness(float2 uv) const
+{
+  if (m_metallicRoughnessSampler && m_metallicRoughnessSampler->isValid()) {
+    float4 s = m_metallicRoughnessSampler->eval(uv);
+    return float2(s.z, s.y);
+  }
+  return float2(m_metallic, m_roughness);
+}
+
+float3 PhysicallyBasedMaterial::evalEmissive(float2 uv) const
+{
+  if (m_emissiveSampler && m_emissiveSampler->isValid()) {
+    float4 s = m_emissiveSampler->eval(uv);
+    return float3(s.x, s.y, s.z) * m_emissiveStrength;
+  }
+  return m_emissive * m_emissiveStrength;
+}
+
+float PhysicallyBasedMaterial::evalOpacity(float2 uv, float baseAlpha) const
+{
+  float op = m_opacity * baseAlpha;
+
+  switch (m_alphaMode) {
+  case AlphaMode::OPAQUE:
+    return 1.f;
+  case AlphaMode::BLEND:
+    return std::max(0.f, std::min(1.f, op));
+  case AlphaMode::MASK:
+    return op >= m_alphaCutoff ? 1.f : 0.f;
+  }
+  return 1.f;
 }
 
 } // namespace anari_webgpu

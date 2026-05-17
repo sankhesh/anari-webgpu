@@ -43,6 +43,44 @@ struct MatteMaterial : public Material
   float m_alphaCutoff{0.5f};
 };
 
+struct PhysicallyBasedMaterial : public Material
+{
+  PhysicallyBasedMaterial(WebGPUDeviceGlobalState *s);
+  void commitParameters() override;
+  bool isValid() const override;
+
+  float4 baseColor() const;
+  float metallic() const;
+  float roughness() const;
+  float3 emissive() const;
+  float emissiveStrength() const;
+  float opacity() const;
+  AlphaMode alphaMode() const;
+  float alphaCutoff() const;
+
+  float4 evalBaseColor(float2 uv) const;
+  float2 evalMetallicRoughness(float2 uv) const;
+  float3 evalEmissive(float2 uv) const;
+  float evalOpacity(float2 uv, float baseAlpha) const;
+
+ private:
+  float4 m_baseColor{0.8f, 0.8f, 0.8f, 1.f};
+  float m_metallic{0.f};
+  float m_roughness{1.f};
+  float3 m_emissive{0.f, 0.f, 0.f};
+  float m_emissiveStrength{1.f};
+  float m_opacity{1.f};
+
+  helium::IntrusivePtr<Sampler> m_baseColorSampler;
+  helium::IntrusivePtr<Sampler> m_metallicRoughnessSampler;
+  helium::IntrusivePtr<Sampler> m_normalSampler;
+  helium::IntrusivePtr<Sampler> m_emissiveSampler;
+  helium::IntrusivePtr<Sampler> m_occlusionSampler;
+
+  AlphaMode m_alphaMode{AlphaMode::OPAQUE};
+  float m_alphaCutoff{0.5f};
+};
+
 } // namespace anari_webgpu
 
 WEBGPU_ANARI_TYPEFOR_SPECIALIZATION(anari_webgpu::Material *, ANARI_MATERIAL);
