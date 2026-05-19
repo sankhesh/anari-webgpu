@@ -47,8 +47,6 @@ struct Frame : public helium::BaseFrame
   void wait() const;
 
   // --- Shared resource access ---
-  // External WebGPU consumers can access the framebuffer storage buffer
-  // directly for compositing, post-processing, or display without readback.
   WGPUBuffer colorStorageBuffer() const { return m_colorStorageBuf; }
   WGPUBuffer depthStorageBuffer() const { return m_depthStorageBuf; }
 
@@ -57,7 +55,6 @@ struct Frame : public helium::BaseFrame
   void cleanupComputeResources();
   void writeSample(int x, int y, const PixelSample &s);
 
-  // Software rasterizer fallback for basic rendering
   void softwareRasterize();
   void softwareRaymarchVolume();
 
@@ -79,14 +76,9 @@ struct Frame : public helium::BaseFrame
 
   float m_duration{0.f};
 
-  // --- Compute pipeline resources ---
-  // The framebuffer is a storage buffer (not a render texture), making it
-  // directly accessible to compute shaders for rendering, compositing, and
-  // post-processing. External WebGPU code sharing the same WGPUDevice can
-  // bind these buffers in their own compute/render pipelines.
-  WGPUBuffer m_colorStorageBuf{nullptr};   // RGBA32Float per pixel
+  WGPUBuffer m_colorStorageBuf{nullptr};
   WGPUBuffer m_depthStorageBuf{nullptr};
-  WGPUBuffer m_readbackBuffer{nullptr};    // For CPU readback
+  WGPUBuffer m_readbackBuffer{nullptr};
 
   // Clear pass
   WGPUComputePipeline m_clearPipeline{nullptr};
@@ -100,6 +92,10 @@ struct Frame : public helium::BaseFrame
   WGPUComputePipeline m_pbrPipeline{nullptr};
   WGPUShaderModule m_pbrShader{nullptr};
   WGPUBindGroupLayout m_pbrBGL{nullptr};
+
+  WGPUComputePipeline m_volumePipeline{nullptr};
+  WGPUShaderModule m_volumeShader{nullptr};
+  WGPUBindGroupLayout m_volumeBGL{nullptr};
 
   bool m_gpuResourcesInitialized{false};
 };

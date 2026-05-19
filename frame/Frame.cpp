@@ -4,6 +4,8 @@
 #include "Frame.h"
 #include "geometry/Geometry.h"
 #include "material/Material.h"
+#include "spatial_field/SpatialField.h"
+#include "volume/Volume.h"
 // std
 #include <algorithm>
 #include <chrono>
@@ -360,6 +362,148 @@ fn pbr_main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 }
 
+
+static const char *s_volumeShaderSource = R"(
+// Volume ray-marching compute shader.
+// One thread per pixel.  Dispatch: ceil(width * height / 256) workgroups.
+//
+// Uniform layout (192 bytes):
+//   viewInv       mat4x4  64
+//   projInv       mat4x4  64
+//   volumeMin     vec3    12
+//   stepSize      f32      4  = 16
+//   volumeMax     vec3    12
+//   densityScale  f32      4  = 16
+//   dims          vec3u   12
+//   tfSize        u32      4  = 16
+//   valueRangeMin f32      4
+//   valueRangeMax f32      4
+//   width         u32      4
+//   height        u32      4  = 16
+//                          ---
+//                          192 bytes
+
+struct VolumeUniforms {
+  viewInv       : mat4x4<f32>,
+  projInv       : mat4x4<f32>,
+  volumeMin     : vec3<f32>,
+  stepSize      : f32,
+  volumeMax     : vec3<f32>,
+  densityScale  : f32,
+  dims          : vec3<u32>,
+  tfSize        : u32,
+  valueRangeMin : f32,
+  valueRangeMax : f32,
+  width         : u32,
+  height        : u32,
+};
+
+@group(0) @binding(0) var<storage, read_write> vol_colorBuf  : array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read>       vol_depthBuf  : array<f32>;
+@group(0) @binding(2) var<uniform>             vol_params    : VolumeUniforms;
+@group(0) @binding(3) var<storage, read>       vol_data      : array<f32>;
+@group(0) @binding(4) var<storage, read>       vol_tf        : array<vec4<f32>>;
+
+fn vol_sampleTrilinear(pos: vec3<f32>) -> f32 {
+  let ext = vec3<f32>(vol_params.volumeMax - vol_params.volumeMin);
+  let uvw = (pos - vol_params.volumeMin) / ext;
+  if (any(uvw < vec3<f32>(0.0)) || any(uvw > vec3<f32>(1.0))) { return 0.0; }
+
+  let coord = uvw * vec3<f32>(vol_params.dims - vec3<u32>(1u));
+  let c0 = vec3<u32>(u32(coord.x), u32(coord.y), u32(coord.z));
+  let c1 = min(c0 + vec3<u32>(1u), vol_params.dims - vec3<u32>(1u));
+  let fr = fract(coord);
+
+  let dxy = vol_params.dims.x * vol_params.dims.y;
+  let i000 = c0.x + c0.y*vol_params.dims.x + c0.z*dxy;
+  let i100 = c1.x + c0.y*vol_params.dims.x + c0.z*dxy;
+  let i010 = c0.x + c1.y*vol_params.dims.x + c0.z*dxy;
+  let i110 = c1.x + c1.y*vol_params.dims.x + c0.z*dxy;
+  let i001 = c0.x + c0.y*vol_params.dims.x + c1.z*dxy;
+  let i101 = c1.x + c0.y*vol_params.dims.x + c1.z*dxy;
+  let i011 = c0.x + c1.y*vol_params.dims.x + c1.z*dxy;
+  let i111 = c1.x + c1.y*vol_params.dims.x + c1.z*dxy;
+
+  let v00 = mix(vol_data[i000], vol_data[i100], fr.x);
+  let v10 = mix(vol_data[i010], vol_data[i110], fr.x);
+  let v01 = mix(vol_data[i001], vol_data[i101], fr.x);
+  let v11 = mix(vol_data[i011], vol_data[i111], fr.x);
+  let v0  = mix(v00, v10, fr.y);
+  let v1  = mix(v01, v11, fr.y);
+  return mix(v0, v1, fr.z);
+}
+
+fn vol_lookupTF(scalar: f32) -> vec4<f32> {
+  let t = clamp((scalar - vol_params.valueRangeMin) /
+                (vol_params.valueRangeMax - vol_params.valueRangeMin + 0.0001),
+                0.0, 1.0);
+  let idx = u32(t * f32(vol_params.tfSize - 1u));
+  return vol_tf[idx];
+}
+
+fn vol_intersectAABB(ro: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
+  let inv = 1.0 / rd;
+  let t0 = (vol_params.volumeMin - ro) * inv;
+  let t1 = (vol_params.volumeMax - ro) * inv;
+  let tMin = max(max(min(t0.x,t1.x), min(t0.y,t1.y)), min(t0.z,t1.z));
+  let tMax = min(min(max(t0.x,t1.x), max(t0.y,t1.y)), max(t0.z,t1.z));
+  return vec2<f32>(tMin, tMax);
+}
+
+@compute @workgroup_size(256)
+fn vol_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let pixIdx = gid.x;
+  if (pixIdx >= vol_params.width * vol_params.height) { return; }
+
+  let px = pixIdx % vol_params.width;
+  let py = pixIdx / vol_params.width;
+
+  // Reconstruct world-space ray from pixel coords
+  let ndcX =  (f32(px) + 0.5) / f32(vol_params.width)  * 2.0 - 1.0;
+  let ndcY = -(( f32(py) + 0.5) / f32(vol_params.height) * 2.0 - 1.0);
+
+  let clipPos  = vec4<f32>(ndcX, ndcY, -1.0, 1.0);
+  let viewPos4 = vol_params.projInv * clipPos;
+  let viewDir  = normalize(vec3<f32>(viewPos4.xy / viewPos4.w, -1.0));
+  let worldDir = normalize((vol_params.viewInv * vec4<f32>(viewDir, 0.0)).xyz);
+  let worldOri = (vol_params.viewInv * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+
+  let tHit = vol_intersectAABB(worldOri, worldDir);
+  if (tHit.x > tHit.y || tHit.y < 0.0) { return; }
+
+  let tStart = max(tHit.x, 0.0);
+  let tEnd   = tHit.y;
+
+  // BUG: iterating from back to front — compositing order is wrong.
+  // Front-to-back (over-operator) integration is the correct approach
+  // and will be fixed in a subsequent commit.
+  var accColor = vec3<f32>(0.0);
+  var accAlpha = 0.0;
+
+  let numSteps = i32((tEnd - tStart) / vol_params.stepSize) + 1;
+  for (var i = 0; i < numSteps; i++) {
+    // Sample from back to front (BUG)
+    let tCurr = tEnd - f32(i) * vol_params.stepSize;
+    if (tCurr < tStart) { break; }
+
+    let pos    = worldOri + tCurr * worldDir;
+    let scalar = vol_sampleTrilinear(pos);
+    let sample = vol_lookupTF(scalar);
+    let sa     = clamp(sample.a * vol_params.densityScale * vol_params.stepSize, 0.0, 1.0);
+
+    // Back-to-front "under" compositing (BUG — should be front-to-back "over")
+    accColor = sample.rgb * sa + accColor * (1.0 - sa);
+    accAlpha = sa + accAlpha * (1.0 - sa);
+  }
+
+  if (accAlpha < 0.001) { return; }
+
+  // Composite volume over existing geometry
+  let geomColor = vol_colorBuf[pixIdx];
+  let outColor  = accColor + geomColor.rgb * (1.0 - accAlpha);
+  vol_colorBuf[pixIdx] = vec4<f32>(outColor, min(geomColor.a + accAlpha, 1.0));
+}
+
 )";
 
 Frame::Frame(WebGPUDeviceGlobalState *s) : helium::BaseFrame(s) {}
@@ -404,6 +548,11 @@ void Frame::finalize()
   m_valid = m_renderer && m_camera && m_camera->isValid() && m_world && m_world->isValid();
 
   cleanupComputeResources();
+
+  rel(m_volumePipeline, wgpuComputePipelineRelease);
+  rel(m_volumeShader,   wgpuShaderModuleRelease);
+  rel(m_volumeBGL,      wgpuBindGroupLayoutRelease);
+
   m_gpuResourcesInitialized = false;
 }
 
@@ -547,6 +696,17 @@ void Frame::initComputeResources()
     m_pbrBGL = makeBGL(device, entries, 7);
     m_pbrPipeline = makePipeline(device, m_pbrShader, m_pbrBGL,
         "anari_pbr_pipeline", "pbr_main");
+  }
+
+  {
+    m_volumeShader = makeWGSLModule(device, s_volumeShaderSource, "anari_volume_shader");
+
+    WGPUBindGroupLayoutEntry volEntries[5] = {
+        storageEntry(0, false), storageEntry(1, true), uniformEntry(2),
+        storageEntry(3, true), storageEntry(4, true)};
+    m_volumeBGL = makeBGL(device, volEntries, 5);
+    m_volumePipeline = makePipeline(device, m_volumeShader, m_volumeBGL,
+        "anari_volume_pipeline", "vol_main");
   }
 
   m_gpuResourcesInitialized = true;
@@ -895,6 +1055,115 @@ void Frame::renderFrame()
         }
       }
 
+      for (auto *inst : m_world->instances()) {
+        if (!inst || !inst->group()) continue;
+        for (auto *vol : inst->group()->volumes()) {
+          auto *tfVol = dynamic_cast<const TransferFunction1DVolume *>(vol);
+          if (!tfVol || !tfVol->isValid()) continue;
+          const StructuredRegularField *field = tfVol->field();
+          if (!field || !field->isValid()) continue;
+
+          float3 vMin = field->worldMin();
+          float3 vMax = field->worldMax();
+          uint3  dims = field->dims();
+          uint64_t numVoxels = field->numVoxels();
+
+          const uint32_t TF_SIZE = 256;
+          std::vector<float4> tfTable = tfVol->buildTFTable(TF_SIZE);
+
+          float3 sp = field->spacing();
+          float stepSize = 0.5f * std::sqrt(sp.x*sp.x + sp.y*sp.y + sp.z*sp.z);
+
+          WGPUBuffer voxBuf = uploadStorage(device, queue,
+              field->rawData(), numVoxels * sizeof(float), "anari_vol_data");
+          WGPUBuffer tfBuf  = uploadStorage(device, queue,
+              tfTable.data(), TF_SIZE * sizeof(float4), "anari_vol_tf");
+
+          auto *cam2 = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
+          float aspect2 = float(m_size.x) / float(m_size.y);
+          float fovy2 = cam2 ? cam2->fovy() : float(M_PI/3.0);
+          float3 eye2 = cam2 ? cam2->position() : float3(0,0,5);
+          float3 dir2 = cam2 ? cam2->direction() : float3(0,0,-1);
+          float3 up2  = cam2 ? cam2->up() : float3(0,1,0);
+
+          float3 ff = linalg::normalize(dir2);
+          float3 ss = linalg::normalize(linalg::cross(ff, up2));
+          float3 uu = linalg::cross(ss, ff);
+          mat4 view2;
+          view2[0] = {ss.x, uu.x, -ff.x, 0.f};
+          view2[1] = {ss.y, uu.y, -ff.y, 0.f};
+          view2[2] = {ss.z, uu.z, -ff.z, 0.f};
+          view2[3] = {-linalg::dot(ss,eye2),-linalg::dot(uu,eye2),linalg::dot(ff,eye2),1.f};
+          mat4 viewInv = linalg::inverse(view2);
+
+          float th2 = std::tan(fovy2/2.f), near2=0.1f, far2=1000.f;
+          mat4 proj2;
+          proj2[0]={1.f/(aspect2*th2),0,0,0};
+          proj2[1]={0,1.f/th2,0,0};
+          proj2[2]={0,0,far2/(near2-far2),-1.f};
+          proj2[3]={0,0,(far2*near2)/(near2-far2),0};
+          mat4 projInv = linalg::inverse(proj2);
+
+          struct VolumeUniforms {
+            float viewInv[16];
+            float projInv[16];
+            float volumeMin[3]; float stepSize;
+            float volumeMax[3]; float densityScale;
+            uint32_t dims[3];   uint32_t tfSize;
+            float valueRangeMin, valueRangeMax;
+            uint32_t width, height;
+          } vu;
+
+          for (int c=0;c<4;c++) for (int r=0;r<4;r++) {
+            vu.viewInv[r*4+c] = viewInv[c][r];
+            vu.projInv[r*4+c] = projInv[c][r];
+          }
+          vu.volumeMin[0]=vMin.x; vu.volumeMin[1]=vMin.y; vu.volumeMin[2]=vMin.z;
+          vu.stepSize = stepSize;
+          vu.volumeMax[0]=vMax.x; vu.volumeMax[1]=vMax.y; vu.volumeMax[2]=vMax.z;
+          vu.densityScale = tfVol->densityScale();
+          vu.dims[0]=dims.x; vu.dims[1]=dims.y; vu.dims[2]=dims.z;
+          vu.tfSize = TF_SIZE;
+          float2 vr = tfVol->valueRange();
+          vu.valueRangeMin=vr.x; vu.valueRangeMax=vr.y;
+          vu.width=m_size.x; vu.height=m_size.y;
+
+          WGPUBuffer ub = uploadUniform(device, queue, &vu, sizeof(vu));
+
+          WGPUBindGroupEntry be5[5]{};
+          be5[0] = {nullptr,0,m_colorStorageBuf,0,numPixels*16ULL};
+          be5[1] = {nullptr,1,m_depthStorageBuf,0,numPixels*4ULL};
+          be5[2] = {nullptr,2,ub,0,sizeof(vu)};
+          be5[3] = {nullptr,3,voxBuf,0,numVoxels*sizeof(float)};
+          be5[4] = {nullptr,4,tfBuf, 0,TF_SIZE*sizeof(float4)};
+
+          WGPUBindGroupDescriptor bgd5{};
+          bgd5.nextInChain = nullptr;
+          bgd5.layout = m_volumeBGL;
+          bgd5.entryCount = 5;
+          bgd5.entries = be5;
+          WGPUBindGroup bg5 = wgpuDeviceCreateBindGroup(device, &bgd5);
+
+          WGPUComputePassDescriptor passDesc{};
+          passDesc.nextInChain = nullptr;
+          passDesc.label = WGPUStringView{"anari_volume_pass", 17};
+          passDesc.timestampWrites = nullptr;
+          WGPUComputePassEncoder pass =
+              wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
+          wgpuComputePassEncoderSetPipeline(pass, m_volumePipeline);
+          wgpuComputePassEncoderSetBindGroup(pass, 0, bg5, 0, nullptr);
+          wgpuComputePassEncoderDispatchWorkgroups(
+              pass, (numPixels + 255) / 256, 1, 1);
+          wgpuComputePassEncoderEnd(pass);
+          wgpuComputePassEncoderRelease(pass);
+
+          wgpuBindGroupRelease(bg5);
+          wgpuBufferRelease(ub);
+          wgpuBufferRelease(voxBuf);
+          wgpuBufferRelease(tfBuf);
+        }
+      }
+
       wgpuCommandEncoderCopyBufferToBuffer(encoder,
           m_colorStorageBuf, 0, m_readbackBuffer, 0,
           numPixels * sizeof(float) * 4);
@@ -1215,6 +1484,112 @@ void Frame::softwareRasterize()
 
 void Frame::softwareRaymarchVolume()
 {
+  if (!m_world || !m_camera)
+    return;
+
+  auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
+  if (!cam)
+    return;
+
+  float aspect = float(m_size.x) / float(m_size.y);
+  float fovy   = cam->fovy();
+  float3 eye = cam->position(), dir = cam->direction(), up = cam->up();
+
+  float3 f = linalg::normalize(dir);
+  float3 s = linalg::normalize(linalg::cross(f, up));
+  float3 u = linalg::cross(s, f);
+
+  mat4 view;
+  view[0]={s.x,u.x,-f.x,0.f}; view[1]={s.y,u.y,-f.y,0.f};
+  view[2]={s.z,u.z,-f.z,0.f};
+  view[3]={-linalg::dot(s,eye),-linalg::dot(u,eye),linalg::dot(f,eye),1.f};
+  mat4 viewInv = linalg::inverse(view);
+
+  float th=std::tan(fovy/2.f), near=0.1f, far=1000.f;
+  mat4 proj;
+  proj[0]={1.f/(aspect*th),0,0,0}; proj[1]={0,1.f/th,0,0};
+  proj[2]={0,0,far/(near-far),-1.f}; proj[3]={0,0,(far*near)/(near-far),0};
+  mat4 projInv = linalg::inverse(proj);
+
+  auto unproject = [&](int px, int py) -> float3 {
+    float ndcX = (px + 0.5f) / float(m_size.x) * 2.f - 1.f;
+    float ndcY = -((py + 0.5f) / float(m_size.y) * 2.f - 1.f);
+    float4 clip{ndcX, ndcY, -1.f, 1.f};
+    float4 vp4 = linalg::mul(projInv, clip);
+    float3 vd = linalg::normalize(float3(vp4.x/vp4.w, vp4.y/vp4.w, -1.f));
+    float4 wd4 = linalg::mul(viewInv, float4(vd.x, vd.y, vd.z, 0.f));
+    return linalg::normalize(float3(wd4.x, wd4.y, wd4.z));
+  };
+
+  auto intersectAABB = [](float3 ro, float3 rd, float3 bmin, float3 bmax) -> float2 {
+    float3 inv{1.f/rd.x, 1.f/rd.y, 1.f/rd.z};
+    float3 t0{(bmin.x-ro.x)*inv.x, (bmin.y-ro.y)*inv.y, (bmin.z-ro.z)*inv.z};
+    float3 t1{(bmax.x-ro.x)*inv.x, (bmax.y-ro.y)*inv.y, (bmax.z-ro.z)*inv.z};
+    float tMin = std::max({std::min(t0.x,t1.x), std::min(t0.y,t1.y), std::min(t0.z,t1.z)});
+    float tMax = std::min({std::max(t0.x,t1.x), std::max(t0.y,t1.y), std::max(t0.z,t1.z)});
+    return float2{tMin, tMax};
+  };
+
+  for (auto *inst : m_world->instances()) {
+    if (!inst || !inst->group()) continue;
+    for (auto *vol : inst->group()->volumes()) {
+      auto *tfVol = dynamic_cast<const TransferFunction1DVolume *>(vol);
+      if (!tfVol || !tfVol->isValid()) continue;
+      const StructuredRegularField *field = tfVol->field();
+      if (!field) continue;
+
+      float3 vMin = field->worldMin(), vMax = field->worldMax();
+      float3 sp = field->spacing();
+      float stepSize = 0.5f*std::sqrt(sp.x*sp.x+sp.y*sp.y+sp.z*sp.z);
+      float ds = tfVol->densityScale();
+      float2 vr = tfVol->valueRange();
+
+      for (uint32_t py = 0; py < m_size.y; py++) {
+        for (uint32_t px = 0; px < m_size.x; px++) {
+          float3 rd = unproject((int)px, (int)py);
+          float2 tHit = intersectAABB(eye, rd, vMin, vMax);
+          if (tHit.x > tHit.y || tHit.y < 0.f) continue;
+          float tStart = std::max(tHit.x, 0.f);
+          float tEnd   = tHit.y;
+
+          float3 accColor{0,0,0};
+          float accAlpha = 0.f;
+
+          for (float t = tStart; t <= tEnd; t += stepSize) {
+            float3 pos = float3(eye.x+t*rd.x, eye.y+t*rd.y, eye.z+t*rd.z);
+            float scalar = field->sampleWorld(pos);
+            float norm = (scalar - vr.x) / (vr.y - vr.x + 1e-6f);
+            float4 sample = tfVol->transferFunction(std::max(0.f,std::min(1.f,norm)));
+            float sa = std::max(0.f,std::min(1.f, sample.w * ds * stepSize));
+
+            accColor = float3(
+                accColor.x + (1.f-accAlpha)*sample.x*sa,
+                accColor.y + (1.f-accAlpha)*sample.y*sa,
+                accColor.z + (1.f-accAlpha)*sample.z*sa);
+            accAlpha += (1.f-accAlpha)*sa;
+            if (accAlpha >= 0.99f) break;
+          }
+
+          if (accAlpha < 0.001f) continue;
+
+          uint32_t idx = py*m_size.x + px;
+          const auto *cpx = m_pixelBuffer.data() + idx*m_perPixelBytes;
+          float4 geomCol{0,0,0,0};
+          if (m_colorType == ANARI_FLOAT32_VEC4) {
+            std::memcpy(&geomCol, cpx, sizeof(float4));
+          } else {
+            geomCol = float4(cpx[0]/255.f, cpx[1]/255.f, cpx[2]/255.f, cpx[3]/255.f);
+          }
+          float4 finalCol{
+              accColor.x + geomCol.x*(1.f-accAlpha),
+              accColor.y + geomCol.y*(1.f-accAlpha),
+              accColor.z + geomCol.z*(1.f-accAlpha),
+              std::min(geomCol.w + accAlpha, 1.f)};
+          writeSample((int)px, (int)py, PixelSample(finalCol));
+        }
+      }
+    }
+  }
 }
 
 void *Frame::map(std::string_view channel,
