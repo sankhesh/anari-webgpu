@@ -286,10 +286,11 @@ fn pbr_main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let metallic  = pbr_params.metallicRoughness.x;
   let roughness = pbr_params.metallicRoughness.y;
 
-  // BUG: should be roughness * roughness (Disney remapping).
-  // Using raw roughness makes surfaces appear less rough than intended,
-  // especially noticeable in the 0.0-0.5 range.
-  let alpha = roughness;
+  // Disney perceptual roughness remapping: alpha = roughness^2.
+  // This maps artist-friendly roughness [0,1] to the GGX alpha parameter
+  // so that roughness=0 gives a perfect mirror and roughness=1 gives a
+  // fully diffuse surface with the correct perceptual linearity.
+  let alpha = roughness * roughness;
 
   let L  = normalize(-pbr_params.lightDir);
 
