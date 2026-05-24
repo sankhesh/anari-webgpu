@@ -6,7 +6,10 @@
       "anari_core_1_0",
       "anari_core_objects_base_1_0",
       "khr_instance_transform",
-      "khr_material_matte"
+      "khr_material_matte",
+      "khr_material_physically_based",
+      "khr_geometry_spatial_field",
+      "khr_volume_transfer_function_1d"
     ]
   },
   "objects": [
@@ -49,23 +52,14 @@
       "parameters": [
         {
           "name": "background",
-          "types": [
-            "ANARI_FLOAT32_VEC4"
-          ],
+          "types": ["ANARI_FLOAT32_VEC4"],
           "tags": [],
-          "default": [
-            0.0,
-            0.0,
-            0.0,
-            1.0
-          ],
+          "default": [0.0, 0.0, 0.0, 1.0],
           "description": "background color and alpha (RGBA)"
         },
         {
           "name": "ambientRadiance",
-          "types": [
-            "ANARI_FLOAT32"
-          ],
+          "types": ["ANARI_FLOAT32"],
           "tags": [],
           "default": 1.0,
           "description": "ambient light intensity"
@@ -203,6 +197,89 @@
       ]
     },
     {
+      "type": "ANARI_MATERIAL",
+      "name": "physicallyBased",
+      "parameters": [
+        {
+          "name": "baseColor",
+          "types": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4", "ANARI_SAMPLER"],
+          "tags": [],
+          "default": [0.8, 0.8, 0.8, 1.0],
+          "description": "base color / albedo (constant or image2D sampler)"
+        },
+        {
+          "name": "metallic",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 0.0,
+          "description": "metallic factor [0,1]; 0=dielectric, 1=conductor"
+        },
+        {
+          "name": "roughness",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 1.0,
+          "description": "perceptual roughness [0,1] (alpha = roughness^2 in GGX)"
+        },
+        {
+          "name": "metallicRoughness",
+          "types": ["ANARI_SAMPLER"],
+          "tags": [],
+          "default": null,
+          "description": "combined metallic-roughness sampler (B=metallic, G=roughness, glTF convention)"
+        },
+        {
+          "name": "emissive",
+          "types": ["ANARI_FLOAT32_VEC3", "ANARI_SAMPLER"],
+          "tags": [],
+          "default": [0.0, 0.0, 0.0],
+          "description": "emissive color (HDR; multiplied by emissiveStrength)"
+        },
+        {
+          "name": "emissiveStrength",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 1.0,
+          "description": "emissive intensity multiplier"
+        },
+        {
+          "name": "normal",
+          "types": ["ANARI_SAMPLER"],
+          "tags": [],
+          "default": null,
+          "description": "tangent-space normal map sampler"
+        },
+        {
+          "name": "occlusion",
+          "types": ["ANARI_SAMPLER"],
+          "tags": [],
+          "default": null,
+          "description": "ambient occlusion map sampler (R channel)"
+        },
+        {
+          "name": "opacity",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 1.0,
+          "description": "base opacity multiplier"
+        },
+        {
+          "name": "alphaMode",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "opaque",
+          "description": "alpha compositing mode: opaque, blend, or mask"
+        },
+        {
+          "name": "alphaCutoff",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 0.5,
+          "description": "threshold for mask alpha mode"
+        }
+      ]
+    },
+    {
       "type": "ANARI_LIGHT",
       "name": "directional",
       "parameters": [
@@ -211,7 +288,7 @@
           "types": ["ANARI_FLOAT32_VEC3"],
           "tags": [],
           "default": [0.0, 0.0, -1.0],
-          "description": "light direction"
+          "description": "light direction vector"
         },
         {
           "name": "color",
@@ -226,6 +303,77 @@
           "tags": [],
           "default": 1.0,
           "description": "light irradiance"
+        }
+      ]
+    },
+    {
+      "type": "ANARI_SPATIAL_FIELD",
+      "name": "structuredRegular",
+      "parameters": [
+        {
+          "name": "data",
+          "types": ["ANARI_ARRAY3D"],
+          "tags": ["required"],
+          "description": "3D array of scalar values (ANARI_FLOAT32, x-major layout)"
+        },
+        {
+          "name": "origin",
+          "types": ["ANARI_FLOAT32_VEC3"],
+          "tags": [],
+          "default": [0.0, 0.0, 0.0],
+          "description": "world-space position of voxel (0,0,0)"
+        },
+        {
+          "name": "spacing",
+          "types": ["ANARI_FLOAT32_VEC3"],
+          "tags": [],
+          "default": [1.0, 1.0, 1.0],
+          "description": "world-space distance between adjacent voxel centers per axis"
+        }
+      ]
+    },
+    {
+      "type": "ANARI_VOLUME",
+      "name": "transferFunction1D",
+      "parameters": [
+        {
+          "name": "field",
+          "types": ["ANARI_SPATIAL_FIELD"],
+          "tags": ["required"],
+          "description": "the underlying structuredRegular scalar field"
+        },
+        {
+          "name": "color",
+          "types": ["ANARI_ARRAY1D"],
+          "tags": [],
+          "description": "RGB color table (ANARI_FLOAT32_VEC3); length determines TF resolution"
+        },
+        {
+          "name": "opacity",
+          "types": ["ANARI_ARRAY1D"],
+          "tags": [],
+          "description": "opacity table (ANARI_FLOAT32); must match length of color"
+        },
+        {
+          "name": "valueRange",
+          "types": ["ANARI_FLOAT32_VEC2"],
+          "tags": [],
+          "default": [0.0, 1.0],
+          "description": "scalar range [min,max] mapped to [0,1] before TF lookup"
+        },
+        {
+          "name": "densityScale",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 1.0,
+          "description": "global opacity multiplier applied per ray step"
+        },
+        {
+          "name": "unitDistance",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 1.0,
+          "description": "physical unit distance corresponding to one step"
         }
       ]
     }
