@@ -475,26 +475,28 @@ fn vol_main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let tStart = max(tHit.x, 0.0);
   let tEnd   = tHit.y;
 
-  // BUG: iterating from back to front — compositing order is wrong.
-  // Front-to-back (over-operator) integration is the correct approach
-  // and will be fixed in a subsequent commit.
+  // Front-to-back compositing using the Porter-Duff "over" operator.
+  // Each step contributes to the accumulated color proportionally to
+  // how much of the remaining transparency (1 - accAlpha) it covers.
   var accColor = vec3<f32>(0.0);
   var accAlpha = 0.0;
 
   let numSteps = i32((tEnd - tStart) / vol_params.stepSize) + 1;
   for (var i = 0; i < numSteps; i++) {
-    // Sample from back to front (BUG)
-    let tCurr = tEnd - f32(i) * vol_params.stepSize;
-    if (tCurr < tStart) { break; }
+    let tCurr = tStart + f32(i) * vol_params.stepSize;
+    if (tCurr > tEnd) { break; }
 
     let pos    = worldOri + tCurr * worldDir;
     let scalar = vol_sampleTrilinear(pos);
     let sample = vol_lookupTF(scalar);
     let sa     = clamp(sample.a * vol_params.densityScale * vol_params.stepSize, 0.0, 1.0);
 
-    // Back-to-front "under" compositing (BUG — should be front-to-back "over")
-    accColor = sample.rgb * sa + accColor * (1.0 - sa);
-    accAlpha = sa + accAlpha * (1.0 - sa);
+    // Front-to-back over-compositing
+    accColor += (1.0 - accAlpha) * sample.rgb * sa;
+    accAlpha += (1.0 - accAlpha) * sa;
+
+    // Early-out when volume is effectively opaque
+    if (accAlpha >= 0.99) { break; }
   }
 
   if (accAlpha < 0.001) { return; }
