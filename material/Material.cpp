@@ -90,8 +90,15 @@ PhysicallyBasedMaterial::PhysicallyBasedMaterial(WebGPUDeviceGlobalState *s)
 
 void PhysicallyBasedMaterial::commitParameters()
 {
-  m_baseColor =
-      getParam<float4>("baseColor", float4(0.8f, 0.8f, 0.8f, 1.f));
+  {
+    float4 tryVec4 = getParam<float4>("baseColor", float4(-1.f, -1.f, -1.f, -1.f));
+    if (tryVec4.x >= 0.f) {
+      m_baseColor = tryVec4;
+    } else {
+      float3 tryVec3 = getParam<float3>("baseColor", float3(0.8f, 0.8f, 0.8f));
+      m_baseColor = float4(tryVec3.x, tryVec3.y, tryVec3.z, 1.f);
+    }
+  }
   m_baseColorSampler = getParamObject<Sampler>("baseColor");
 
   m_metallic = getParam<float>("metallic", 0.f);
