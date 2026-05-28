@@ -179,7 +179,9 @@ static const char *s_pbrShaderSource = R"(
 //   numTriangles     u32       4
 //   hasNormals       u32       4   = 16
 //   hasColors        u32       4
-//   _pad             vec3u    12   = 16
+//   alphaMode        u32       4   (0=OPAQUE 1=BLEND 2=MASK)
+//   alphaCutoff      f32       4
+//   _pad             u32       4   = 16
 //                            ---
 //                            160 bytes total
 
@@ -199,7 +201,9 @@ struct PBRUniforms {
   numTriangles     : u32,
   hasNormals       : u32,
   hasColors        : u32,
-  _pad             : vec3<u32>,
+  alphaMode        : u32,   // 0=OPAQUE 1=BLEND 2=MASK
+  alphaCutoff      : f32,
+  _pad             : u32,
 };
 
 @group(0) @binding(0) var<storage, read_write> pbr_colorBuf  : array<vec4<f32>>;
@@ -351,14 +355,26 @@ fn pbr_main(@builtin(global_invocation_id) gid: vec3<u32>) {
       // Ambient (image-based lighting approximation: constant ambient * albedo)
       Lo += pbr_params.ambientRadiance * baseRGB;
 
-      // Emissive added after lighting
-      Lo += pbr_params.emissive.xyz * pbr_params.emissive.w;
-
-      // Reinhard tone mapping + gamma
+      // Reinhard tone mapping + gamma on scene radiance only
       Lo  = Lo / (Lo + vec3<f32>(1.0));
       Lo  = pow(clamp(Lo, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2));
 
-      pbr_colorBuf[pixIdx] = vec4<f32>(Lo, pbr_params.baseColor.a);
+      // Emissive added after tone mapping: additive glow unaffected by compression
+      Lo += pbr_params.emissive.xyz * pbr_params.emissive.w;
+
+      // Alpha mode: OPAQUE forces alpha=1, MASK discards below cutoff, BLEND passes through
+      var fragAlpha : f32;
+      if (pbr_params.alphaMode == 2u) {          // MASK
+        let rawA = pbr_params.baseColor.a;
+        if (rawA < pbr_params.alphaCutoff) { return; }
+        fragAlpha = 1.0;
+      } else if (pbr_params.alphaMode == 1u) {   // BLEND
+        fragAlpha = pbr_params.baseColor.a;
+      } else {                                    // OPAQUE (default)
+        fragAlpha = 1.0;
+      }
+
+      pbr_colorBuf[pixIdx] = vec4<f32>(Lo, fragAlpha);
     }
   }
 }
@@ -962,7 +978,7 @@ void Frame::renderFrame()
                 float lightDir[3]; float ambientRadiance;
                 float lightColor[3]; float lightIrradiance;
                 uint32_t width, height, numTriangles, hasNormals;
-                uint32_t hasColors; uint32_t _pad[3];
+                uint32_t hasColors; uint32_t alphaMode; float alphaCutoff; uint32_t _pad;
               } pu;
 
               for (int c=0;c<4;c++) for (int r=0;r<4;r++) pu.mvp[r*4+c]=mvp[c][r];
@@ -981,6 +997,8 @@ void Frame::renderFrame()
               pu.width=m_size.x; pu.height=m_size.y;
               pu.numTriangles=numTris;
               pu.hasNormals=norm?1:0; pu.hasColors=col?1:0;
+              pu.alphaMode   = static_cast<uint32_t>(pbrMat->alphaMode());
+              pu.alphaCutoff = pbrMat->alphaCutoff();
 
               WGPUBuffer ub = uploadUniform(device, queue, &pu, sizeof(pu));
 
@@ -1452,12 +1470,13 @@ void Frame::softwareRasterize()
                           Lo.y+ambientRad*baseRGB.y,
                           Lo.z+ambientRad*baseRGB.z);
 
-              float3 em = pbrMat->evalEmissive(uv);
-              Lo = float3(Lo.x+em.x, Lo.y+em.y, Lo.z+em.z);
-
               auto rh = [](float c){ return c/(c+1.f); };
               auto gm = [](float c){ return std::pow(std::max(c,0.f), 1.f/2.2f); };
-              fragColor = float4(gm(rh(Lo.x)), gm(rh(Lo.y)), gm(rh(Lo.z)), bc.w);
+              float3 tonemapped{gm(rh(Lo.x)), gm(rh(Lo.y)), gm(rh(Lo.z))};
+
+              float3 em = pbrMat->evalEmissive(uv);
+              fragColor = float4(tonemapped.x + em.x, tonemapped.y + em.y,
+                                 tonemapped.z + em.z, bc.w);
 
               float op = pbrMat->evalOpacity(uv, bc.w);
               if (op <= 0.f) continue;

@@ -27,7 +27,7 @@ Image2DSampler::Image2DSampler(WebGPUDeviceGlobalState *s) : Sampler(s) {}
 void Image2DSampler::commitParameters()
 {
   m_image = getParamObject<Array2D>("image");
-  m_inAttribute = getParamString("inAttribute", "attribute0");
+  m_inAttribute = getParam<std::string>("inAttribute", "attribute0");
 
   if (!m_image) {
     reportMessage(
