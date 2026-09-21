@@ -27,7 +27,7 @@ Image2DSampler::Image2DSampler(WebGPUDeviceGlobalState *s) : Sampler(s) {}
 void Image2DSampler::commitParameters()
 {
   m_image = getParamObject<Array2D>("image");
-  m_inAttribute = getParam<std::string>("inAttribute", "attribute0");
+  m_inAttribute = getParamString("inAttribute", "attribute0");
 
   if (!m_image) {
     reportMessage(
@@ -44,7 +44,7 @@ void Image2DSampler::commitParameters()
 
 bool Image2DSampler::isValid() const
 {
-  return m_image != nullptr;
+  return bool(m_image);
 }
 
 float4 Image2DSampler::eval(float2 uv) const
@@ -59,7 +59,7 @@ float4 Image2DSampler::eval(float2 uv) const
   uint64_t py = std::min((uint64_t)(v * m_height), m_height - 1);
   uint64_t idx = py * m_width + px;
 
-  const auto *data = m_image->begin();
+  const auto *data = m_image->data();
 
   if (m_imageElementType == ANARI_FLOAT32_VEC4) {
     const float *p = (const float *)data + idx * 4;
