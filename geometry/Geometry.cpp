@@ -40,7 +40,7 @@ bool TriangleGeometry::isValid() const
 
 const float *TriangleGeometry::vertexPositions() const
 {
-  return m_vertex_position ? (const float *)m_vertex_position->begin() : nullptr;
+  return m_vertex_position ? (const float *)m_vertex_position->data() : nullptr;
 }
 
 uint32_t TriangleGeometry::numVertices() const
@@ -50,24 +50,24 @@ uint32_t TriangleGeometry::numVertices() const
 
 const float *TriangleGeometry::vertexColors() const
 {
-  return m_vertex_color ? (const float *)m_vertex_color->begin() : nullptr;
+  return m_vertex_color ? (const float *)m_vertex_color->data() : nullptr;
 }
 
 const float *TriangleGeometry::vertexNormals() const
 {
-  return m_vertex_normal ? (const float *)m_vertex_normal->begin() : nullptr;
+  return m_vertex_normal ? (const float *)m_vertex_normal->data() : nullptr;
 }
 
 const float *TriangleGeometry::vertexTexCoords() const
 {
   return m_vertex_attribute0
-      ? (const float *)m_vertex_attribute0->begin()
+      ? (const float *)m_vertex_attribute0->data()
       : nullptr;
 }
 
 const uint32_t *TriangleGeometry::indices() const
 {
-  return m_index ? (const uint32_t *)m_index->begin() : nullptr;
+  return m_index ? (const uint32_t *)m_index->data() : nullptr;
 }
 
 uint32_t TriangleGeometry::numIndices() const
@@ -78,7 +78,7 @@ uint32_t TriangleGeometry::numIndices() const
 uint32_t TriangleGeometry::numTriangles() const
 {
   if (m_index)
-    return numIndices() / 3;
+    return numIndices();
   return numVertices() / 3;
 }
 
