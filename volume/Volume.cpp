@@ -100,7 +100,7 @@ float4 TransferFunction1DVolume::transferFunction(float t) const
     uint32_t i1 = std::min(i0 + 1u, n - 1u);
     float frac = fidx - float(i0);
 
-    const float *col = reinterpret_cast<const float *>(m_color->begin());
+    const float *col = reinterpret_cast<const float *>(m_color->data());
     float3 c0{col[i0 * 3], col[i0 * 3 + 1], col[i0 * 3 + 2]};
     float3 c1{col[i1 * 3], col[i1 * 3 + 1], col[i1 * 3 + 2]};
     rgb = float3(
@@ -116,7 +116,7 @@ float4 TransferFunction1DVolume::transferFunction(float t) const
     uint32_t i1 = std::min(i0 + 1u, n - 1u);
     float frac = fidx - float(i0);
 
-    const float *op = reinterpret_cast<const float *>(m_opacity->begin());
+    const float *op = reinterpret_cast<const float *>(m_opacity->data());
     a = op[i0] * (1.f - frac) + op[i1] * frac;
   }
 
