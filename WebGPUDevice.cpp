@@ -10,6 +10,7 @@
 #include "frame/Frame.h"
 #include "spatial_field/SpatialField.h"
 
+#include <cstdlib> // for std::getenv
 #include <webgpu/webgpu.h>
 
 #include "anari_library_webgpu_queries.h"
@@ -301,6 +302,14 @@ void WebGPUDevice::initWebGPU()
 
   // --- Internal creation path ---
   // Create our own WebGPU instance, adapter, and device.
+
+  const char* disableWebGPU = std::getenv("ANARI_WEBGPU_DISABLE");
+  if (disableWebGPU && disableWebGPU[0] == '1')
+  {
+    reportMessage(ANARI_SEVERITY_INFO,
+      "WebGPU disabled via ANARI_WEBGPU_DISABLE=1. Using software rasterization only.");
+    return;
+  }
 
   WGPUInstanceDescriptor instanceDesc{};
   instanceDesc.nextInChain = nullptr;
