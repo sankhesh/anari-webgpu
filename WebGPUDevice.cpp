@@ -361,8 +361,17 @@ void WebGPUDevice::initWebGPU()
   // Request device
   DeviceResult deviceResult;
 
+  static const char* kDisabledToggles[] = { "lazy_clear_resource_on_first_use" };
+  WGPUDawnTogglesDescriptor togglesDesc{};
+  togglesDesc.chain.next = nullptr;
+  togglesDesc.chain.sType = WGPUSType_DawnTogglesDescriptor;
+  togglesDesc.enabledToggleCount = 0;
+  togglesDesc.enabledToggles = nullptr;
+  togglesDesc.disabledToggleCount = 1;
+  togglesDesc.disabledToggles = kDisabledToggles;
+
   WGPUDeviceDescriptor deviceDesc{};
-  deviceDesc.nextInChain = nullptr;
+  deviceDesc.nextInChain = &togglesDesc.chain;
 
   deviceDesc.label = WGPUStringView{ "anari_webgpu_device", strlen("anari_webgpu_device") };
   deviceDesc.requiredFeatureCount = 0;
