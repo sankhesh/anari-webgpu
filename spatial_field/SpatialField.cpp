@@ -44,7 +44,7 @@ void StructuredRegularField::commitParameters()
 
 bool StructuredRegularField::isValid() const
 {
-  return m_data != nullptr
+  return bool(m_data)
       && m_dims.x > 0 && m_dims.y > 0 && m_dims.z > 0;
 }
 
@@ -147,7 +147,7 @@ const float *StructuredRegularField::rawData() const
 {
   if (!m_data)
     return nullptr;
-  return reinterpret_cast<const float *>(m_data->begin());
+  return reinterpret_cast<const float *>(m_data->data());
 }
 
 uint64_t StructuredRegularField::numVoxels() const
