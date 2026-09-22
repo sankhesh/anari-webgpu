@@ -170,7 +170,7 @@
           "name": "color",
           "types": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4", "ANARI_SAMPLER"],
           "tags": [],
-          "default": [0.8, 0.8, 0.8, 1.0],
+          "default": [0.8, 0.8, 0.8],
           "description": "diffuse color (constant, per-vertex, or from sampler)"
         },
         {
@@ -204,7 +204,7 @@
           "name": "baseColor",
           "types": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4", "ANARI_SAMPLER"],
           "tags": [],
-          "default": [0.8, 0.8, 0.8, 1.0],
+          "default": [0.8, 0.8, 0.8],
           "description": "base color / albedo (constant or image2D sampler)"
         },
         {
