@@ -378,7 +378,7 @@ fn pbr_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 }
-
+)";
 
 static const char *s_volumeShaderSource = R"(
 // Volume ray-marching compute shader.
