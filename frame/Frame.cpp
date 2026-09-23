@@ -572,6 +572,7 @@ void Frame::finalize()
   m_perPixelBytes = 4 * (m_colorType == ANARI_FLOAT32_VEC4 ? 4 : 1);
   m_pixelBuffer.resize(numPixels * m_perPixelBytes);
   m_depthBuffer.resize(m_depthType == ANARI_FLOAT32 ? numPixels : 0);
+  m_zBuffer.resize(numPixels);
 
   m_valid = m_renderer && m_camera && m_camera->isValid() && m_world && m_world->isValid();
 
@@ -833,7 +834,7 @@ void Frame::renderFrame()
   auto *state = deviceState();
   state->commitBuffer.flush();
 
-  if (!m_valid || !m_world)
+  if (!m_valid || !m_world || m_size.x == 0 || m_size.y == 0)
     goto done;
 
   if (state->wgpuDevice) {
@@ -1260,7 +1261,8 @@ done:
 
 void Frame::softwareRasterize()
 {
-  if (!m_world || !m_camera)
+  if (!m_world || !m_camera || m_size.x == 0 || m_size.y == 0
+      || m_zBuffer.size() < size_t(m_size.x) * size_t(m_size.y))
     return;
 
   auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
@@ -1306,7 +1308,7 @@ void Frame::softwareRasterize()
     }
   }
 
-  std::fill(m_depthBuffer.begin(), m_depthBuffer.end(),
+  std::fill(m_zBuffer.begin(), m_zBuffer.end(),
       std::numeric_limits<float>::max());
 
   for (auto *inst : m_world->instances()) {
@@ -1412,8 +1414,10 @@ void Frame::softwareRasterize()
 
             float depth = w0*scr0.z + w1*scr1.z + w2*scr2.z;
             uint32_t idx = py*m_size.x + px;
-            if (depth >= m_depthBuffer[idx]) continue;
-            m_depthBuffer[idx] = depth;
+            if (depth >= m_zBuffer[idx]) continue;
+            m_zBuffer[idx] = depth;
+            if (!m_depthBuffer.empty())
+              m_depthBuffer[idx] = depth;
 
             float2 uv{uv0.x*w0+uv1.x*w1+uv2.x*w2, uv0.y*w0+uv1.y*w1+uv2.y*w2};
             float3 N = linalg::normalize(n0*w0 + n1*w1 + n2*w2);
@@ -1513,7 +1517,7 @@ void Frame::softwareRasterize()
 
 void Frame::softwareRaymarchVolume()
 {
-  if (!m_world || !m_camera)
+  if (!m_world || !m_camera || m_size.x == 0 || m_size.y == 0)
     return;
 
   auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);

@@ -69,6 +69,7 @@ struct Frame : public helium::BaseFrame
 
   std::vector<uint8_t> m_pixelBuffer;
   std::vector<float> m_depthBuffer;
+  std::vector<float> m_zBuffer;
 
   helium::IntrusivePtr<Renderer> m_renderer;
   helium::IntrusivePtr<Camera> m_camera;
