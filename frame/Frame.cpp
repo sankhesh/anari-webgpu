@@ -25,6 +25,15 @@ void bufferMapCallback(WGPUMapAsyncStatus status, WGPUStringView message,
   ctx->status = status;
   ctx->done = true;
 }
+
+template <typename Handle, typename ReleaseFn>
+void rel(Handle &h, ReleaseFn fn)
+{
+  if (h) {
+    fn(h);
+    h = nullptr;
+  }
+}
 } // namespace
 
 namespace anari_webgpu {
@@ -733,8 +742,6 @@ void Frame::initComputeResources()
 
 void Frame::cleanupComputeResources()
 {
-  auto rel = [](auto &h, auto fn) { if (h) { fn(h); h = nullptr; } };
-
   rel(m_readbackBuffer,  wgpuBufferRelease);
   rel(m_colorStorageBuf, wgpuBufferRelease);
   rel(m_depthStorageBuf, wgpuBufferRelease);
