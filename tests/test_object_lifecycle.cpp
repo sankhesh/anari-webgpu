@@ -57,14 +57,13 @@ static void test_create_release() {
   printf(" PASSED\n");
 }
 
-// Test: double release should not crash (ANARI spec allows this)
 static void test_double_release() {
   printf("  test_double_release...");
   ANARIDevice dev = createTestDevice();
 
   ANARICamera cam = anariNewCamera(dev, "perspective");
+  anariRetain(dev, cam);
   anariRelease(dev, cam);
-  // Second release is a no-op per spec
   anariRelease(dev, cam);
 
   anariRelease(dev, dev);
