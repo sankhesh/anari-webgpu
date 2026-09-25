@@ -91,6 +91,54 @@ if(NOT
   endif()
 endif()
 
+find_package(vtkSlang 0.1 QUIET)
+if(NOT vtkSlang_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(vtkSlang
+    GIT_REPOSITORY https://github.com/sankhesh/vtkSlang.git
+    GIT_TAG 1dda0b547a9a48553ab1a907e992b30597aaca56)
+  FetchContent_MakeAvailable(vtkSlang)
+endif()
+
+# Shaders
+
+set(_shader_dir "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+set(_generated_dir "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+set(_sources_header "${CMAKE_CURRENT_BINARY_DIR}/anariShaderSources.h")
+set(_wgsl_header "${CMAKE_CURRENT_BINARY_DIR}/anariShaderWGSL.h")
+file(GLOB _shader_files CONFIGURE_DEPENDS "${_shader_dir}/*.slang")
+file(GLOB _generated_files CONFIGURE_DEPENDS "${_generated_dir}/*.wgsl")
+
+add_custom_command(
+  OUTPUT "${_sources_header}"
+  COMMAND "${CMAKE_COMMAND}" -DSHADER_DIR=${_shader_dir} -DOUT_HEADER=${_sources_header}
+          -DNAMESPACE=anariShaderSources -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
+  DEPENDS ${_shader_files} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
+  COMMENT "Embedding Slang shader sources into anariShaderSources.h"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT "${_wgsl_header}"
+  COMMAND "${CMAKE_COMMAND}" -DSHADER_DIR=${_generated_dir} -DOUT_HEADER=${_wgsl_header}
+          -DPATTERN=*.wgsl -DNAMESPACE=anariShaderWGSL
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
+  DEPENDS ${_generated_files} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
+  COMMENT "Embedding generated WGSL into anariShaderWGSL.h"
+  VERBATIM)
+
+add_library(anari_webgpu_shaders STATIC frame/ShaderPrograms.cpp "${_sources_header}"
+                                        "${_wgsl_header}")
+target_include_directories(anari_webgpu_shaders PUBLIC "${CMAKE_CURRENT_LIST_DIR}"
+                                                PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(anari_webgpu_shaders PUBLIC vtkSlang::vtkSlang)
+
+add_executable(anari_webgpu_generate_wgsl tools/GenerateWGSL.cpp)
+target_link_libraries(anari_webgpu_generate_wgsl PRIVATE anari_webgpu_shaders)
+add_custom_target(anari_webgpu_update_wgsl
+  COMMAND anari_webgpu_generate_wgsl "${_generated_dir}"
+  COMMENT "Regenerating generated/*.wgsl from shaders/*.slang"
+  VERBATIM)
+
 # Build device target
 
 add_library(

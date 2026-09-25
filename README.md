@@ -244,6 +244,16 @@ The GPU path creates a single render pipeline with WGSL shaders that support:
 - Depth testing (`Depth24Plus`, less-than compare)
 - Readback via `CopyTextureToBuffer` + `MapAsync`
 
+## Shaders
+
+The device's Slang shaders live in `shaders/`: `clear`, `raster`, `pbr` and
+`volume`, with the helper modules `anari_raster_common` and `anari_scivis`.
+They import vtkSlang's shared `vtkslang_core` module. `generated/` holds their
+WGSL, compiled with the default specializations and embedded in the device, so
+the default shading needs no Slang at run time. After editing a shader, run
+the `anari_webgpu_update_wgsl` target and commit `generated/`; the
+`test_generated_wgsl_up_to_date` test fails while they differ.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.
