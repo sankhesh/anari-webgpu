@@ -8,9 +8,11 @@
 #include "world/World.h"
 // helium
 #include "helium/BaseFrame.h"
+#include "vtkSlangCompiler.h"
 // webgpu
 #include <webgpu/webgpu.h>
 // std
+#include <memory>
 #include <vector>
 
 namespace anari_webgpu {
@@ -53,6 +55,7 @@ struct Frame : public helium::BaseFrame
  private:
   void initComputeResources();
   void cleanupComputeResources();
+  WGPUShaderModule createBuiltinShader(WGPUDevice device, const char *name);
   void writeSample(int x, int y, const PixelSample &s);
 
   void softwareRasterize();
@@ -76,6 +79,8 @@ struct Frame : public helium::BaseFrame
   helium::IntrusivePtr<World> m_world;
 
   float m_duration{0.f};
+
+  vtkslang::vtkSlangCompiler m_slangCompiler;
 
   WGPUBuffer m_colorStorageBuf{nullptr};
   WGPUBuffer m_depthStorageBuf{nullptr};

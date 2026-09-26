@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "Frame.h"
+#include "ShaderPrograms.h"
 #include "geometry/Geometry.h"
 #include "material/Material.h"
 #include "spatial_field/SpatialField.h"
 #include "volume/Volume.h"
+#include "vtkSlangWebGPU.h"
 // std
 #include <algorithm>
 #include <chrono>
@@ -37,502 +39,6 @@ void rel(Handle &h, ReleaseFn fn)
 } // namespace
 
 namespace anari_webgpu {
-
-// ---------------------------------------------------------------------------
-// Compute shaders (WGSL)
-// ---------------------------------------------------------------------------
-
-static const char *s_clearShaderSource = R"(
-struct ClearUniforms {
-  bgColor : vec4<f32>,
-  width   : u32,
-  height  : u32,
-};
-
-@group(0) @binding(0) var<storage, read_write> colorBuf : array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> depthBuf : array<f32>;
-@group(0) @binding(2) var<uniform> params : ClearUniforms;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let idx = gid.x;
-  let numPixels = params.width * params.height;
-  if (idx >= numPixels) { return; }
-  colorBuf[idx] = params.bgColor;
-  depthBuf[idx] = 1.0;
-}
-)";
-
-static const char *s_rasterShaderSource = R"(
-struct RasterUniforms {
-  mvp            : mat4x4<f32>,
-  materialColor  : vec4<f32>,
-  lightDir       : vec3<f32>,
-  ambientRadiance: f32,
-  width          : u32,
-  height         : u32,
-  numTriangles   : u32,
-  hasNormals     : u32,
-  hasColors      : u32,
-  _pad           : vec3<u32>,
-};
-
-@group(0) @binding(0) var<storage, read_write> colorBuf   : array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> depthBufI  : array<atomic<u32>>;
-@group(0) @binding(2) var<uniform>             params     : RasterUniforms;
-@group(0) @binding(3) var<storage, read>       positions  : array<f32>;
-@group(0) @binding(4) var<storage, read>       normals    : array<f32>;
-@group(0) @binding(5) var<storage, read>       colors     : array<f32>;
-@group(0) @binding(6) var<storage, read>       indices    : array<u32>;
-
-fn depthToU32(d : f32) -> u32 {
-  return bitcast<u32>(clamp(d, 0.0, 1.0));
-}
-fn getPosition(idx : u32) -> vec3<f32> {
-  return vec3<f32>(positions[idx*3u], positions[idx*3u+1u], positions[idx*3u+2u]);
-}
-fn getNormal(idx : u32) -> vec3<f32> {
-  return vec3<f32>(normals[idx*3u], normals[idx*3u+1u], normals[idx*3u+2u]);
-}
-fn getColor(idx : u32) -> vec4<f32> {
-  return vec4<f32>(colors[idx*4u], colors[idx*4u+1u], colors[idx*4u+2u], colors[idx*4u+3u]);
-}
-fn edgeFunction(a : vec2<f32>, b : vec2<f32>, c : vec2<f32>) -> f32 {
-  return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-}
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let triIdx = gid.x;
-  if (triIdx >= params.numTriangles) { return; }
-
-  let i0 = indices[triIdx*3u];
-  let i1 = indices[triIdx*3u+1u];
-  let i2 = indices[triIdx*3u+2u];
-
-  let p0 = getPosition(i0); let p1 = getPosition(i1); let p2 = getPosition(i2);
-  let clip0 = params.mvp * vec4<f32>(p0, 1.0);
-  let clip1 = params.mvp * vec4<f32>(p1, 1.0);
-  let clip2 = params.mvp * vec4<f32>(p2, 1.0);
-  if (clip0.w <= 0.0 || clip1.w <= 0.0 || clip2.w <= 0.0) { return; }
-
-  let ndc0 = clip0.xyz / clip0.w;
-  let ndc1 = clip1.xyz / clip1.w;
-  let ndc2 = clip2.xyz / clip2.w;
-
-  let w = f32(params.width); let h = f32(params.height);
-  let scr0 = vec3<f32>((ndc0.x*0.5+0.5)*w, (1.0-(ndc0.y*0.5+0.5))*h, ndc0.z);
-  let scr1 = vec3<f32>((ndc1.x*0.5+0.5)*w, (1.0-(ndc1.y*0.5+0.5))*h, ndc1.z);
-  let scr2 = vec3<f32>((ndc2.x*0.5+0.5)*w, (1.0-(ndc2.y*0.5+0.5))*h, ndc2.z);
-
-  let minX = max(0.0, min(min(scr0.x, scr1.x), scr2.x));
-  let maxX = min(w-1.0, max(max(scr0.x, scr1.x), scr2.x));
-  let minY = max(0.0, min(min(scr0.y, scr1.y), scr2.y));
-  let maxY = min(h-1.0, max(max(scr0.y, scr1.y), scr2.y));
-
-  let area = edgeFunction(scr0.xy, scr1.xy, scr2.xy);
-  if (abs(area) < 0.000001) { return; }
-
-  var faceNormal : vec3<f32>;
-  if (params.hasNormals != 0u) {
-    faceNormal = normalize((getNormal(i0) + getNormal(i1) + getNormal(i2)) / 3.0);
-  } else {
-    faceNormal = normalize(cross(p1 - p0, p2 - p0));
-  }
-  let NdotL = max(dot(faceNormal, normalize(-params.lightDir)), 0.0);
-  let lighting = min(NdotL + params.ambientRadiance, 1.0);
-
-  var c0 = params.materialColor; var c1 = params.materialColor; var c2 = params.materialColor;
-  if (params.hasColors != 0u) {
-    c0 = getColor(i0)*params.materialColor; c1 = getColor(i1)*params.materialColor; c2 = getColor(i2)*params.materialColor;
-  }
-
-  for (var py = i32(minY); py <= i32(maxY); py++) {
-    for (var px = i32(minX); px <= i32(maxX); px++) {
-      let p = vec2<f32>(f32(px)+0.5, f32(py)+0.5);
-      let w0 = edgeFunction(scr1.xy, scr2.xy, p) / area;
-      let w1 = edgeFunction(scr2.xy, scr0.xy, p) / area;
-      let w2 = edgeFunction(scr0.xy, scr1.xy, p) / area;
-      if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
-        let depth = w0*scr0.z + w1*scr1.z + w2*scr2.z;
-        let depthU = depthToU32(depth);
-        let pixIdx = u32(py)*params.width + u32(px);
-        let prev = atomicMin(&depthBufI[pixIdx], depthU);
-        if (depthU <= prev) {
-          let color = c0*w0 + c1*w1 + c2*w2;
-          colorBuf[pixIdx] = vec4<f32>(color.rgb * lighting, color.a);
-        }
-      }
-    }
-  }
-}
-)";
-
-static const char *s_pbrShaderSource = R"(
-
-// PBR rasterizer — Cook-Torrance BRDF with GGX NDF.
-// One compute thread handles one triangle (same dispatch scheme as the
-// matte raster shader above).
-//
-// Uniform layout (160 bytes, 16-byte aligned):
-//   mvp              mat4x4   64
-//   baseColor        vec4     16
-//   emissive         vec4     16   (xyz=emissive, w=emissiveStrength)
-//   metallicRoughness vec4    16   (x=metallic, y=roughness)
-//   lightDir         vec3     12
-//   ambientRadiance  f32       4   = 16
-//   lightColor       vec3     12
-//   lightIrradiance  f32       4   = 16
-//   width            u32       4
-//   height           u32       4
-//   numTriangles     u32       4
-//   hasNormals       u32       4   = 16
-//   hasColors        u32       4
-//   alphaMode        u32       4   (0=OPAQUE 1=BLEND 2=MASK)
-//   alphaCutoff      f32       4
-//   _pad             u32       4   = 16
-//                            ---
-//                            160 bytes total
-
-const PI_PBR : f32 = 3.14159265358979;
-
-struct PBRUniforms {
-  mvp              : mat4x4<f32>,
-  baseColor        : vec4<f32>,
-  emissive         : vec4<f32>,
-  metallicRoughness: vec4<f32>,
-  lightDir         : vec3<f32>,
-  ambientRadiance  : f32,
-  lightColor       : vec3<f32>,
-  lightIrradiance  : f32,
-  width            : u32,
-  height           : u32,
-  numTriangles     : u32,
-  hasNormals       : u32,
-  hasColors        : u32,
-  alphaMode        : u32,   // 0=OPAQUE 1=BLEND 2=MASK
-  alphaCutoff      : f32,
-  _pad             : u32,
-};
-
-@group(0) @binding(0) var<storage, read_write> pbr_colorBuf  : array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> pbr_depthBufI : array<atomic<u32>>;
-@group(0) @binding(2) var<uniform>             pbr_params    : PBRUniforms;
-@group(0) @binding(3) var<storage, read>       pbr_positions : array<f32>;
-@group(0) @binding(4) var<storage, read>       pbr_normals   : array<f32>;
-@group(0) @binding(5) var<storage, read>       pbr_colors    : array<f32>;
-@group(0) @binding(6) var<storage, read>       pbr_indices   : array<u32>;
-
-fn pbr_depthToU32(d: f32) -> u32 { return bitcast<u32>(clamp(d, 0.0, 1.0)); }
-fn pbr_getPos(i: u32) -> vec3<f32> {
-  return vec3<f32>(pbr_positions[i*3u], pbr_positions[i*3u+1u], pbr_positions[i*3u+2u]);
-}
-fn pbr_getNorm(i: u32) -> vec3<f32> {
-  return vec3<f32>(pbr_normals[i*3u], pbr_normals[i*3u+1u], pbr_normals[i*3u+2u]);
-}
-fn pbr_getColor(i: u32) -> vec4<f32> {
-  return vec4<f32>(pbr_colors[i*4u], pbr_colors[i*4u+1u], pbr_colors[i*4u+2u], pbr_colors[i*4u+3u]);
-}
-fn pbr_edge(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> f32 {
-  return (c.x-a.x)*(b.y-a.y) - (c.y-a.y)*(b.x-a.x);
-}
-
-// GGX/Trowbridge-Reitz normal distribution function
-fn D_GGX(NdotH: f32, alpha: f32) -> f32 {
-  let a2 = alpha * alpha;
-  let d  = NdotH * NdotH * (a2 - 1.0) + 1.0;
-  return a2 / (PI_PBR * d * d + 0.0001);
-}
-
-// Schlick-GGX visibility (one direction)
-fn G_SchlickGGX(NdotX: f32, roughness: f32) -> f32 {
-  let r = roughness + 1.0;
-  let k = (r * r) / 8.0;
-  return NdotX / (NdotX * (1.0 - k) + k + 0.0001);
-}
-
-// Smith's combined geometry term
-fn G_Smith(NdotV: f32, NdotL: f32, roughness: f32) -> f32 {
-  return G_SchlickGGX(NdotV, roughness) * G_SchlickGGX(NdotL, roughness);
-}
-
-// Fresnel-Schlick approximation
-fn F_Schlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
-  let t  = clamp(1.0 - cosTheta, 0.0, 1.0);
-  let t5 = t * t * t * t * t;
-  return F0 + (vec3<f32>(1.0) - F0) * t5;
-}
-
-@compute @workgroup_size(256)
-fn pbr_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let triIdx = gid.x;
-  if (triIdx >= pbr_params.numTriangles) { return; }
-
-  let i0 = pbr_indices[triIdx*3u];
-  let i1 = pbr_indices[triIdx*3u+1u];
-  let i2 = pbr_indices[triIdx*3u+2u];
-
-  let p0 = pbr_getPos(i0); let p1 = pbr_getPos(i1); let p2 = pbr_getPos(i2);
-
-  let clip0 = pbr_params.mvp * vec4<f32>(p0, 1.0);
-  let clip1 = pbr_params.mvp * vec4<f32>(p1, 1.0);
-  let clip2 = pbr_params.mvp * vec4<f32>(p2, 1.0);
-  if (clip0.w <= 0.0 || clip1.w <= 0.0 || clip2.w <= 0.0) { return; }
-
-  let ndc0 = clip0.xyz / clip0.w;
-  let ndc1 = clip1.xyz / clip1.w;
-  let ndc2 = clip2.xyz / clip2.w;
-
-  let W = f32(pbr_params.width); let H = f32(pbr_params.height);
-  let s0 = vec3<f32>((ndc0.x*0.5+0.5)*W, (1.0-(ndc0.y*0.5+0.5))*H, ndc0.z);
-  let s1 = vec3<f32>((ndc1.x*0.5+0.5)*W, (1.0-(ndc1.y*0.5+0.5))*H, ndc1.z);
-  let s2 = vec3<f32>((ndc2.x*0.5+0.5)*W, (1.0-(ndc2.y*0.5+0.5))*H, ndc2.z);
-
-  let minX = max(0.0, min(min(s0.x, s1.x), s2.x));
-  let maxX = min(W-1.0, max(max(s0.x, s1.x), s2.x));
-  let minY = max(0.0, min(min(s0.y, s1.y), s2.y));
-  let maxY = min(H-1.0, max(max(s0.y, s1.y), s2.y));
-
-  let area = pbr_edge(s0.xy, s1.xy, s2.xy);
-  if (abs(area) < 0.000001) { return; }
-
-  let metallic  = pbr_params.metallicRoughness.x;
-  let roughness = pbr_params.metallicRoughness.y;
-
-  // Disney perceptual roughness remapping: alpha = roughness^2.
-  // This maps artist-friendly roughness [0,1] to the GGX alpha parameter
-  // so that roughness=0 gives a perfect mirror and roughness=1 gives a
-  // fully diffuse surface with the correct perceptual linearity.
-  let alpha = roughness * roughness;
-
-  let L  = normalize(-pbr_params.lightDir);
-
-  for (var py = i32(minY); py <= i32(maxY); py++) {
-    for (var px = i32(minX); px <= i32(maxX); px++) {
-      let pp = vec2<f32>(f32(px)+0.5, f32(py)+0.5);
-      let w0 = pbr_edge(s1.xy, s2.xy, pp) / area;
-      let w1 = pbr_edge(s2.xy, s0.xy, pp) / area;
-      let w2 = pbr_edge(s0.xy, s1.xy, pp) / area;
-      if (w0 < 0.0 || w1 < 0.0 || w2 < 0.0) { continue; }
-
-      let depth  = w0*s0.z + w1*s1.z + w2*s2.z;
-      let depthU = pbr_depthToU32(depth);
-      let pixIdx = u32(py)*pbr_params.width + u32(px);
-
-      let prev = atomicMin(&pbr_depthBufI[pixIdx], depthU);
-      if (depthU > prev) { continue; }
-
-      // Interpolate normal
-      var N: vec3<f32>;
-      if (pbr_params.hasNormals != 0u) {
-        N = normalize(pbr_getNorm(i0)*w0 + pbr_getNorm(i1)*w1 + pbr_getNorm(i2)*w2);
-      } else {
-        N = normalize(cross(p1-p0, p2-p0));
-      }
-
-      // Approximate view direction from NDC centroid
-      let ndcC  = ndc0*w0 + ndc1*w1 + ndc2*w2;
-      let V = normalize(vec3<f32>(-ndcC.x, -ndcC.y, 1.0));
-      let H = normalize(V + L);
-
-      let NdotL = max(dot(N, L), 0.0);
-      let NdotV = max(dot(N, V), 0.0001);
-      let NdotH = max(dot(N, H), 0.0);
-      let HdotV = max(dot(H, V), 0.0);
-
-      // Base color (constant or per-vertex modulated)
-      var baseRGB = pbr_params.baseColor.rgb;
-      if (pbr_params.hasColors != 0u) {
-        let vc = pbr_getColor(i0)*w0 + pbr_getColor(i1)*w1 + pbr_getColor(i2)*w2;
-        baseRGB = baseRGB * vc.rgb;
-      }
-
-      // F0: dielectric 0.04, metal = baseColor
-      let F0 = mix(vec3<f32>(0.04), baseRGB, metallic);
-
-      let D = D_GGX(NdotH, alpha);
-      let G = G_Smith(NdotV, NdotL, roughness);
-      let F = F_Schlick(HdotV, F0);
-
-      let specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.0001);
-      let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-      let diffuse = kD * baseRGB / PI_PBR;
-
-      let irradiance = pbr_params.lightIrradiance * pbr_params.lightColor;
-      var Lo = (diffuse + specular) * irradiance * NdotL;
-
-      // Ambient (image-based lighting approximation: constant ambient * albedo)
-      Lo += pbr_params.ambientRadiance * baseRGB;
-
-      // Reinhard tone mapping + gamma on scene radiance only
-      Lo  = Lo / (Lo + vec3<f32>(1.0));
-      Lo  = pow(clamp(Lo, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2));
-
-      // Emissive added after tone mapping: additive glow unaffected by compression
-      Lo += pbr_params.emissive.xyz * pbr_params.emissive.w;
-
-      // Alpha mode: OPAQUE forces alpha=1, MASK discards below cutoff, BLEND passes through
-      var fragAlpha : f32;
-      if (pbr_params.alphaMode == 2u) {          // MASK
-        let rawA = pbr_params.baseColor.a;
-        if (rawA < pbr_params.alphaCutoff) { return; }
-        fragAlpha = 1.0;
-      } else if (pbr_params.alphaMode == 1u) {   // BLEND
-        fragAlpha = pbr_params.baseColor.a;
-      } else {                                    // OPAQUE (default)
-        fragAlpha = 1.0;
-      }
-
-      pbr_colorBuf[pixIdx] = vec4<f32>(Lo, fragAlpha);
-    }
-  }
-}
-)";
-
-static const char *s_volumeShaderSource = R"(
-// Volume ray-marching compute shader.
-// One thread per pixel.  Dispatch: ceil(width * height / 256) workgroups.
-//
-// Uniform layout (192 bytes):
-//   viewInv       mat4x4  64
-//   projInv       mat4x4  64
-//   volumeMin     vec3    12
-//   stepSize      f32      4  = 16
-//   volumeMax     vec3    12
-//   densityScale  f32      4  = 16
-//   dims          vec3u   12
-//   tfSize        u32      4  = 16
-//   valueRangeMin f32      4
-//   valueRangeMax f32      4
-//   width         u32      4
-//   height        u32      4  = 16
-//                          ---
-//                          192 bytes
-
-struct VolumeUniforms {
-  viewInv       : mat4x4<f32>,
-  projInv       : mat4x4<f32>,
-  volumeMin     : vec3<f32>,
-  stepSize      : f32,
-  volumeMax     : vec3<f32>,
-  densityScale  : f32,
-  dims          : vec3<u32>,
-  tfSize        : u32,
-  valueRangeMin : f32,
-  valueRangeMax : f32,
-  width         : u32,
-  height        : u32,
-};
-
-@group(0) @binding(0) var<storage, read_write> vol_colorBuf  : array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read>       vol_depthBuf  : array<f32>;
-@group(0) @binding(2) var<uniform>             vol_params    : VolumeUniforms;
-@group(0) @binding(3) var<storage, read>       vol_data      : array<f32>;
-@group(0) @binding(4) var<storage, read>       vol_tf        : array<vec4<f32>>;
-
-fn vol_sampleTrilinear(pos: vec3<f32>) -> f32 {
-  let ext = vec3<f32>(vol_params.volumeMax - vol_params.volumeMin);
-  let uvw = (pos - vol_params.volumeMin) / ext;
-  if (any(uvw < vec3<f32>(0.0)) || any(uvw > vec3<f32>(1.0))) { return 0.0; }
-
-  let coord = uvw * vec3<f32>(vol_params.dims - vec3<u32>(1u));
-  let c0 = vec3<u32>(u32(coord.x), u32(coord.y), u32(coord.z));
-  let c1 = min(c0 + vec3<u32>(1u), vol_params.dims - vec3<u32>(1u));
-  let fr = fract(coord);
-
-  let dxy = vol_params.dims.x * vol_params.dims.y;
-  let i000 = c0.x + c0.y*vol_params.dims.x + c0.z*dxy;
-  let i100 = c1.x + c0.y*vol_params.dims.x + c0.z*dxy;
-  let i010 = c0.x + c1.y*vol_params.dims.x + c0.z*dxy;
-  let i110 = c1.x + c1.y*vol_params.dims.x + c0.z*dxy;
-  let i001 = c0.x + c0.y*vol_params.dims.x + c1.z*dxy;
-  let i101 = c1.x + c0.y*vol_params.dims.x + c1.z*dxy;
-  let i011 = c0.x + c1.y*vol_params.dims.x + c1.z*dxy;
-  let i111 = c1.x + c1.y*vol_params.dims.x + c1.z*dxy;
-
-  let v00 = mix(vol_data[i000], vol_data[i100], fr.x);
-  let v10 = mix(vol_data[i010], vol_data[i110], fr.x);
-  let v01 = mix(vol_data[i001], vol_data[i101], fr.x);
-  let v11 = mix(vol_data[i011], vol_data[i111], fr.x);
-  let v0  = mix(v00, v10, fr.y);
-  let v1  = mix(v01, v11, fr.y);
-  return mix(v0, v1, fr.z);
-}
-
-fn vol_lookupTF(scalar: f32) -> vec4<f32> {
-  let t = clamp((scalar - vol_params.valueRangeMin) /
-                (vol_params.valueRangeMax - vol_params.valueRangeMin + 0.0001),
-                0.0, 1.0);
-  let idx = u32(t * f32(vol_params.tfSize - 1u));
-  return vol_tf[idx];
-}
-
-fn vol_intersectAABB(ro: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
-  let inv = 1.0 / rd;
-  let t0 = (vol_params.volumeMin - ro) * inv;
-  let t1 = (vol_params.volumeMax - ro) * inv;
-  let tMin = max(max(min(t0.x,t1.x), min(t0.y,t1.y)), min(t0.z,t1.z));
-  let tMax = min(min(max(t0.x,t1.x), max(t0.y,t1.y)), max(t0.z,t1.z));
-  return vec2<f32>(tMin, tMax);
-}
-
-@compute @workgroup_size(256)
-fn vol_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let pixIdx = gid.x;
-  if (pixIdx >= vol_params.width * vol_params.height) { return; }
-
-  let px = pixIdx % vol_params.width;
-  let py = pixIdx / vol_params.width;
-
-  // Reconstruct world-space ray from pixel coords
-  let ndcX =  (f32(px) + 0.5) / f32(vol_params.width)  * 2.0 - 1.0;
-  let ndcY = -(( f32(py) + 0.5) / f32(vol_params.height) * 2.0 - 1.0);
-
-  let clipPos  = vec4<f32>(ndcX, ndcY, -1.0, 1.0);
-  let viewPos4 = vol_params.projInv * clipPos;
-  let viewDir  = normalize(vec3<f32>(viewPos4.xy / viewPos4.w, -1.0));
-  let worldDir = normalize((vol_params.viewInv * vec4<f32>(viewDir, 0.0)).xyz);
-  let worldOri = (vol_params.viewInv * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
-
-  let tHit = vol_intersectAABB(worldOri, worldDir);
-  if (tHit.x > tHit.y || tHit.y < 0.0) { return; }
-
-  let tStart = max(tHit.x, 0.0);
-  let tEnd   = tHit.y;
-
-  // Front-to-back compositing using the Porter-Duff "over" operator.
-  // Each step contributes to the accumulated color proportionally to
-  // how much of the remaining transparency (1 - accAlpha) it covers.
-  var accColor = vec3<f32>(0.0);
-  var accAlpha = 0.0;
-
-  let numSteps = i32((tEnd - tStart) / vol_params.stepSize) + 1;
-  for (var i = 0; i < numSteps; i++) {
-    let tCurr = tStart + f32(i) * vol_params.stepSize;
-    if (tCurr > tEnd) { break; }
-
-    let pos    = worldOri + tCurr * worldDir;
-    let scalar = vol_sampleTrilinear(pos);
-    let sample = vol_lookupTF(scalar);
-    let sa     = clamp(sample.a * vol_params.densityScale * vol_params.stepSize, 0.0, 1.0);
-
-    // Front-to-back over-compositing
-    accColor += (1.0 - accAlpha) * sample.rgb * sa;
-    accAlpha += (1.0 - accAlpha) * sa;
-
-    // Early-out when volume is effectively opaque
-    if (accAlpha >= 0.99) { break; }
-  }
-
-  if (accAlpha < 0.001) { return; }
-
-  // Composite volume over existing geometry
-  let geomColor = vol_colorBuf[pixIdx];
-  let outColor  = accColor + geomColor.rgb * (1.0 - accAlpha);
-  vol_colorBuf[pixIdx] = vec4<f32>(outColor, min(geomColor.a + accAlpha, 1.0));
-}
-
-)";
 
 Frame::Frame(WebGPUDeviceGlobalState *s) : helium::BaseFrame(s) {}
 
@@ -620,20 +126,6 @@ static WGPUComputePipeline makePipeline(WGPUDevice device,
   return pipeline;
 }
 
-static WGPUShaderModule makeWGSLModule(WGPUDevice device, const char *src,
-    const char *label)
-{
-  WGPUShaderSourceWGSL wgslSrc{};
-  wgslSrc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgslSrc.chain.next = nullptr;
-  wgslSrc.code = WGPUStringView{src, strlen(src)};
-
-  WGPUShaderModuleDescriptor smDesc{};
-  smDesc.nextInChain = &wgslSrc.chain;
-  smDesc.label = WGPUStringView{label, strlen(label)};
-  return wgpuDeviceCreateShaderModule(device, &smDesc);
-}
-
 static WGPUBindGroupLayoutEntry storageEntry(uint32_t binding, bool readOnly)
 {
   WGPUBindGroupLayoutEntry e{};
@@ -694,7 +186,12 @@ void Frame::initComputeResources()
   }
 
   {
-    m_clearShader = makeWGSLModule(device, s_clearShaderSource, "anari_clear_shader");
+    m_clearShader = createBuiltinShader(device, "clear");
+    if (!m_clearShader) {
+      reportMessage(ANARI_SEVERITY_ERROR, "Failed to compile clear shader");
+      m_gpuResourcesInitialized = false;
+      return;
+    }
 
     WGPUBindGroupLayoutEntry entries[3] = {
         storageEntry(0, false), storageEntry(1, false), uniformEntry(2)};
@@ -704,7 +201,12 @@ void Frame::initComputeResources()
   }
 
   {
-    m_rasterShader = makeWGSLModule(device, s_rasterShaderSource, "anari_raster_shader");
+    m_rasterShader = createBuiltinShader(device, "raster");
+    if (!m_rasterShader) {
+      reportMessage(ANARI_SEVERITY_ERROR, "Failed to compile raster shader");
+      m_gpuResourcesInitialized = false;
+      return;
+    }
 
     WGPUBindGroupLayoutEntry entries[7] = {
         storageEntry(0, false), storageEntry(1, false), uniformEntry(2),
@@ -716,7 +218,12 @@ void Frame::initComputeResources()
   }
 
   {
-    m_pbrShader = makeWGSLModule(device, s_pbrShaderSource, "anari_pbr_shader");
+    m_pbrShader = createBuiltinShader(device, "pbr");
+    if (!m_pbrShader) {
+      reportMessage(ANARI_SEVERITY_ERROR, "Failed to compile PBR shader");
+      m_gpuResourcesInitialized = false;
+      return;
+    }
 
     WGPUBindGroupLayoutEntry entries[7] = {
         storageEntry(0, false), storageEntry(1, false), uniformEntry(2),
@@ -728,7 +235,12 @@ void Frame::initComputeResources()
   }
 
   {
-    m_volumeShader = makeWGSLModule(device, s_volumeShaderSource, "anari_volume_shader");
+    m_volumeShader = createBuiltinShader(device, "volume");
+    if (!m_volumeShader) {
+      reportMessage(ANARI_SEVERITY_ERROR, "Failed to compile volume shader");
+      m_gpuResourcesInitialized = false;
+      return;
+    }
 
     WGPUBindGroupLayoutEntry volEntries[5] = {
         storageEntry(0, false), storageEntry(1, true), uniformEntry(2),
@@ -739,6 +251,21 @@ void Frame::initComputeResources()
   }
 
   m_gpuResourcesInitialized = true;
+}
+
+WGPUShaderModule Frame::createBuiltinShader(WGPUDevice device, const char *name)
+{
+  vtkslang::Artifact artifact =
+      m_slangCompiler.compileProgram(shaderProgram(name));
+  if (!artifact) {
+    reportMessage(ANARI_SEVERITY_ERROR,
+        "vtkSlang failed to compile '%s':\n%s",
+        name,
+        artifact.diagnostics.c_str());
+    return nullptr;
+  }
+  std::string label = std::string("anari_") + name;
+  return vtkslang::createShaderModule(device, artifact, label.c_str());
 }
 
 void Frame::cleanupComputeResources()

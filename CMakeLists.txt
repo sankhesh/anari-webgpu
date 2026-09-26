@@ -161,7 +161,7 @@ add_library(
   world/Instance.cpp
   world/World.cpp)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE anari::helium)
+target_link_libraries(${PROJECT_NAME} PRIVATE anari::helium vtkSlang::vtkSlang anari_webgpu_shaders)
 
 # Link WebGPU
 if(EMSCRIPTEN)

@@ -80,7 +80,7 @@ ANARI parameters flow through two phases triggered by `anariCommitParameters()`:
 3. **GPU path** (when `state->wgpuDevice != nullptr`): lazily initializes WebGPU resources (`initWebGPUResources`), encodes a render pass, submits, and copies the render texture back to CPU via `wgpuBufferMapAsync` + polling `wgpuInstanceProcessEvents`.
 4. **Software fallback** (`softwareRasterize`): CPU barycentric rasterizer using the same view/projection math.
 
-The WGSL shader is embedded as a string literal in `frame/Frame.cpp`. The vertex buffer layout is interleaved: `position(vec3f) | normal(vec3f) | color(vec4f)` = 10 floats per vertex.
+The Slang shaders live in `shaders/` and their precompiled WGSL in `generated/` (regenerate with the `anari_webgpu_update_wgsl` target); `frame/ShaderPrograms.cpp` lists each program's modules and hands them to vtkSlang's `compileProgram`. The vertex buffer layout is interleaved: `position(vec3f) | normal(vec3f) | color(vec4f)` = 10 floats per vertex.
 
 ### WebGPU header strategy
 
