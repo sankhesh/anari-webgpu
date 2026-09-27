@@ -522,7 +522,7 @@ void Frame::renderFrame()
                 uint32_t hasColors; uint32_t alphaMode; float alphaCutoff; uint32_t _pad;
               } pu;
 
-              for (int c=0;c<4;c++) for (int r=0;r<4;r++) pu.mvp[r*4+c]=mvp[c][r];
+              for (int c=0;c<4;c++) for (int r=0;r<4;r++) pu.mvp[c*4+r]=mvp[c][r];
               float4 bc = pbrMat->baseColor();
               pu.baseColor[0]=bc.x; pu.baseColor[1]=bc.y; pu.baseColor[2]=bc.z; pu.baseColor[3]=bc.w;
               float3 em = pbrMat->emissive();
@@ -586,7 +586,7 @@ void Frame::renderFrame()
                 uint32_t hasColors; uint32_t _pad[3];
               } ru;
 
-              for (int c=0;c<4;c++) for (int r=0;r<4;r++) ru.mvp[r*4+c]=mvp[c][r];
+              for (int c=0;c<4;c++) for (int r=0;r<4;r++) ru.mvp[c*4+r]=mvp[c][r];
               ru.materialColor[0]=matColor.x; ru.materialColor[1]=matColor.y;
               ru.materialColor[2]=matColor.z; ru.materialColor[3]=matColor.w;
               ru.lightDir[0]=lightDir.x; ru.lightDir[1]=lightDir.y; ru.lightDir[2]=lightDir.z;
@@ -697,8 +697,8 @@ void Frame::renderFrame()
           } vu;
 
           for (int c=0;c<4;c++) for (int r=0;r<4;r++) {
-            vu.viewInv[r*4+c] = viewInv[c][r];
-            vu.projInv[r*4+c] = projInv[c][r];
+            vu.viewInv[c*4+r] = viewInv[c][r];
+            vu.projInv[c*4+r] = projInv[c][r];
           }
           vu.volumeMin[0]=vMin.x; vu.volumeMin[1]=vMin.y; vu.volumeMin[2]=vMin.z;
           vu.stepSize = stepSize;
