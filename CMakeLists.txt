@@ -234,4 +234,9 @@ if(BUILD_WEBGPU_EXAMPLE)
   target_link_libraries(anari_webgpu_example PRIVATE anari::anari)
   target_include_directories(anari_webgpu_example
                              PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
+  
+  add_executable(pbr_surface_demo examples/pbr_surface_demo.cpp)
+  target_link_libraries(pbr_surface_demo PRIVATE anari::anari)
+  target_include_directories(pbr_surface_demo
+                             PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
 endif()
