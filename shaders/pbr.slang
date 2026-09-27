@@ -36,6 +36,11 @@ float3 pbr_getPos(uint i)   { return float3(positions[i*3u], positions[i*3u+1u],
 float3 pbr_getNorm(uint i)  { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
 float4 pbr_getColor(uint i) { return float4(colors[i*4u],    colors[i*4u+1u],    colors[i*4u+2u],    colors[i*4u+3u]); }
 
+uint3 pbr_triangleIndices(uint triIdx)
+{
+    return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
+}
+
 float D_GGX(float NdotH, float alpha)
 {
     float a2 = alpha * alpha;
@@ -64,43 +69,47 @@ float3 F_Schlick(float cosTheta, float3 F0)
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
+void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
+{
+    uint triIdx = gid.x;
+    if (triIdx >= params.numTriangles)
+        return;
+
+    uint3 i = pbr_triangleIndices(triIdx);
+    ScreenTriangle t;
+    if (!setupScreenTriangle(params.mvp, pbr_getPos(i.x), pbr_getPos(i.y),
+                             pbr_getPos(i.z), params.width, params.height, t))
+        return;
+
+    for (int py = int(t.minY); py <= int(t.maxY); py++) {
+        for (int px = int(t.minX); px <= int(t.maxX); px++) {
+            float3 w = barycentric(t, px, py);
+            if (!covered(w))
+                continue;
+            uint pixIdx = uint(py)*params.width + uint(px);
+            depthBufI[pixIdx].min(depthToU32(interpolateDepth(t, w)));
+        }
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
 void pbr_main(uint3 gid : SV_DispatchThreadID)
 {
     uint triIdx = gid.x;
     if (triIdx >= params.numTriangles)
         return;
 
-    uint i0 = indices[triIdx*3u];
-    uint i1 = indices[triIdx*3u+1u];
-    uint i2 = indices[triIdx*3u+2u];
-
+    uint3  i  = pbr_triangleIndices(triIdx);
+    uint   i0 = i.x;
+    uint   i1 = i.y;
+    uint   i2 = i.z;
     float3 p0 = pbr_getPos(i0);
     float3 p1 = pbr_getPos(i1);
     float3 p2 = pbr_getPos(i2);
 
-    float4 clip0 = mul(params.mvp, float4(p0, 1.f));
-    float4 clip1 = mul(params.mvp, float4(p1, 1.f));
-    float4 clip2 = mul(params.mvp, float4(p2, 1.f));
-    if (clip0.w <= 0.f || clip1.w <= 0.f || clip2.w <= 0.f)
-        return;
-
-    float3 ndc0 = clip0.xyz / clip0.w;
-    float3 ndc1 = clip1.xyz / clip1.w;
-    float3 ndc2 = clip2.xyz / clip2.w;
-
-    float W = float(params.width);
-    float H = float(params.height);
-    float3 s0 = float3((ndc0.x*0.5f+0.5f)*W, (1.f-(ndc0.y*0.5f+0.5f))*H, ndc0.z);
-    float3 s1 = float3((ndc1.x*0.5f+0.5f)*W, (1.f-(ndc1.y*0.5f+0.5f))*H, ndc1.z);
-    float3 s2 = float3((ndc2.x*0.5f+0.5f)*W, (1.f-(ndc2.y*0.5f+0.5f))*H, ndc2.z);
-
-    float minX = max(0.f, min(min(s0.x, s1.x), s2.x));
-    float maxX = min(W-1.f, max(max(s0.x, s1.x), s2.x));
-    float minY = max(0.f, min(min(s0.y, s1.y), s2.y));
-    float maxY = min(H-1.f, max(max(s0.y, s1.y), s2.y));
-
-    float area = edgeFunction(s0.xy, s1.xy, s2.xy);
-    if (abs(area) < 1e-6f)
+    ScreenTriangle t;
+    if (!setupScreenTriangle(params.mvp, p0, p1, p2, params.width, params.height, t))
         return;
 
     float metallic  = params.metallicRoughness.x;
@@ -109,21 +118,18 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
 
     float3 L = normalize(-params.lightDir);
 
-    for (int py = int(minY); py <= int(maxY); py++) {
-        for (int px = int(minX); px <= int(maxX); px++) {
-            float2 pp = float2(float(px)+0.5f, float(py)+0.5f);
-            float  w0 = edgeFunction(s1.xy, s2.xy, pp) / area;
-            float  w1 = edgeFunction(s2.xy, s0.xy, pp) / area;
-            float  w2 = edgeFunction(s0.xy, s1.xy, pp) / area;
-            if (w0 < 0.f || w1 < 0.f || w2 < 0.f)
+    for (int py = int(t.minY); py <= int(t.maxY); py++) {
+        for (int px = int(t.minX); px <= int(t.maxX); px++) {
+            float3 w = barycentric(t, px, py);
+            if (!covered(w))
                 continue;
+            float w0 = w.x;
+            float w1 = w.y;
+            float w2 = w.z;
 
-            float depth  = w0*s0.z + w1*s1.z + w2*s2.z;
-            uint  dU     = depthToU32(depth);
-            uint  pixIdx = uint(py)*params.width + uint(px);
-
-            uint prev = depthBufI[pixIdx].min(dU);
-            if (dU > prev)
+            uint pixIdx = uint(py)*params.width + uint(px);
+            uint dU     = depthToU32(interpolateDepth(t, w));
+            if (dU > depthBufI[pixIdx].load() + kDepthTolerance)
                 continue;
 
             float3 N;
@@ -132,7 +138,7 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
             else
                 N = normalize(cross(p1-p0, p2-p0));
 
-            float3 ndcC = ndc0*w0 + ndc1*w1 + ndc2*w2;
+            float3 ndcC = t.ndc0*w0 + t.ndc1*w1 + t.ndc2*w2;
             float3 V    = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
             float3 H    = normalize(V + L);
 

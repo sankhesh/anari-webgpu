@@ -40,8 +40,8 @@ struct ProgramCase
 
 static const ProgramCase kCases[] = {
     {"clear", {"main"}},
-    {"raster", {"main"}},
-    {"pbr", {"pbr_main"}},
+    {"raster", {"depth_main", "main"}},
+    {"pbr", {"pbr_depth_main", "pbr_main"}},
     {"volume", {"vol_main"}},
 };
 

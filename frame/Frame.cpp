@@ -215,6 +215,8 @@ void Frame::initComputeResources()
     m_rasterBGL = makeBGL(device, entries, 7);
     m_rasterPipeline = makePipeline(device, m_rasterShader, m_rasterBGL,
         "anari_raster_pipeline", "main");
+    m_rasterDepthPipeline = makePipeline(device, m_rasterShader, m_rasterBGL,
+        "anari_raster_depth_pipeline", "depth_main");
   }
 
   {
@@ -232,6 +234,8 @@ void Frame::initComputeResources()
     m_pbrBGL = makeBGL(device, entries, 7);
     m_pbrPipeline = makePipeline(device, m_pbrShader, m_pbrBGL,
         "anari_pbr_pipeline", "pbr_main");
+    m_pbrDepthPipeline = makePipeline(device, m_pbrShader, m_pbrBGL,
+        "anari_pbr_depth_pipeline", "pbr_depth_main");
   }
 
   {
@@ -278,13 +282,15 @@ void Frame::cleanupComputeResources()
   rel(m_clearShader,   wgpuShaderModuleRelease);
   rel(m_clearBGL,      wgpuBindGroupLayoutRelease);
 
-  rel(m_rasterPipeline, wgpuComputePipelineRelease);
-  rel(m_rasterShader,   wgpuShaderModuleRelease);
-  rel(m_rasterBGL,      wgpuBindGroupLayoutRelease);
+  rel(m_rasterPipeline,      wgpuComputePipelineRelease);
+  rel(m_rasterDepthPipeline, wgpuComputePipelineRelease);
+  rel(m_rasterShader,        wgpuShaderModuleRelease);
+  rel(m_rasterBGL,           wgpuBindGroupLayoutRelease);
 
-  rel(m_pbrPipeline, wgpuComputePipelineRelease);
-  rel(m_pbrShader,   wgpuShaderModuleRelease);
-  rel(m_pbrBGL,      wgpuBindGroupLayoutRelease);
+  rel(m_pbrPipeline,      wgpuComputePipelineRelease);
+  rel(m_pbrDepthPipeline, wgpuComputePipelineRelease);
+  rel(m_pbrShader,        wgpuShaderModuleRelease);
+  rel(m_pbrBGL,           wgpuBindGroupLayoutRelease);
 
   m_gpuResourcesInitialized = false;
 }
@@ -547,6 +553,16 @@ void Frame::renderFrame()
               passDesc.nextInChain = nullptr;
               passDesc.label = WGPUStringView{"anari_pbr_pass", 14};
               passDesc.timestampWrites = nullptr;
+              {
+                WGPUComputePassEncoder dpass =
+                    wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
+                wgpuComputePassEncoderSetPipeline(dpass, m_pbrDepthPipeline);
+                wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
+                wgpuComputePassEncoderDispatchWorkgroups(
+                    dpass, (numTris + 255) / 256, 1, 1);
+                wgpuComputePassEncoderEnd(dpass);
+                wgpuComputePassEncoderRelease(dpass);
+              }
               WGPUComputePassEncoder pass =
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
               wgpuComputePassEncoderSetPipeline(pass, m_pbrPipeline);
@@ -591,6 +607,16 @@ void Frame::renderFrame()
               passDesc.nextInChain = nullptr;
               passDesc.label = WGPUStringView{"anari_raster_pass", 17};
               passDesc.timestampWrites = nullptr;
+              {
+                WGPUComputePassEncoder dpass =
+                    wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
+                wgpuComputePassEncoderSetPipeline(dpass, m_rasterDepthPipeline);
+                wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
+                wgpuComputePassEncoderDispatchWorkgroups(
+                    dpass, (numTris + 255) / 256, 1, 1);
+                wgpuComputePassEncoderEnd(dpass);
+                wgpuComputePassEncoderRelease(dpass);
+              }
               WGPUComputePassEncoder pass =
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
               wgpuComputePassEncoderSetPipeline(pass, m_rasterPipeline);

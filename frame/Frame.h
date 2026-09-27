@@ -92,10 +92,12 @@ struct Frame : public helium::BaseFrame
   WGPUBindGroupLayout m_clearBGL{nullptr};
 
   WGPUComputePipeline m_rasterPipeline{nullptr};
+  WGPUComputePipeline m_rasterDepthPipeline{nullptr};
   WGPUShaderModule m_rasterShader{nullptr};
   WGPUBindGroupLayout m_rasterBGL{nullptr};
 
   WGPUComputePipeline m_pbrPipeline{nullptr};
+  WGPUComputePipeline m_pbrDepthPipeline{nullptr};
   WGPUShaderModule m_pbrShader{nullptr};
   WGPUBindGroupLayout m_pbrBGL{nullptr};
 
