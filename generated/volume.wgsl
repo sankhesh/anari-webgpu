@@ -113,46 +113,45 @@ fn vol_main(@builtin(global_invocation_id) gid_0 : vec3<u32>)
     var px_0 : u32 = pixIdx_0 % params_0.width_0;
     var py_0 : u32 = pixIdx_0 / params_0.width_0;
     var viewPos4_0 : vec4<f32> = (((vec4<f32>((f32(px_0) + 0.5f) / f32(params_0.width_0) * 2.0f - 1.0f, - ((f32(py_0) + 0.5f) / f32(params_0.height_0) * 2.0f - 1.0f), -1.0f, 1.0f)) * (mat4x4<f32>(params_0.projInv_0.data_0[i32(0)][i32(0)], params_0.projInv_0.data_0[i32(1)][i32(0)], params_0.projInv_0.data_0[i32(2)][i32(0)], params_0.projInv_0.data_0[i32(3)][i32(0)], params_0.projInv_0.data_0[i32(0)][i32(1)], params_0.projInv_0.data_0[i32(1)][i32(1)], params_0.projInv_0.data_0[i32(2)][i32(1)], params_0.projInv_0.data_0[i32(3)][i32(1)], params_0.projInv_0.data_0[i32(0)][i32(2)], params_0.projInv_0.data_0[i32(1)][i32(2)], params_0.projInv_0.data_0[i32(2)][i32(2)], params_0.projInv_0.data_0[i32(3)][i32(2)], params_0.projInv_0.data_0[i32(0)][i32(3)], params_0.projInv_0.data_0[i32(1)][i32(3)], params_0.projInv_0.data_0[i32(2)][i32(3)], params_0.projInv_0.data_0[i32(3)][i32(3)]))));
-    var _S26 : f32 = viewPos4_0.w;
-    var worldDir_0 : vec3<f32> = normalize((((vec4<f32>(normalize(vec3<f32>(viewPos4_0.x / _S26, viewPos4_0.y / _S26, -1.0f)), 0.0f)) * (mat4x4<f32>(params_0.viewInv_0.data_0[i32(0)][i32(0)], params_0.viewInv_0.data_0[i32(1)][i32(0)], params_0.viewInv_0.data_0[i32(2)][i32(0)], params_0.viewInv_0.data_0[i32(3)][i32(0)], params_0.viewInv_0.data_0[i32(0)][i32(1)], params_0.viewInv_0.data_0[i32(1)][i32(1)], params_0.viewInv_0.data_0[i32(2)][i32(1)], params_0.viewInv_0.data_0[i32(3)][i32(1)], params_0.viewInv_0.data_0[i32(0)][i32(2)], params_0.viewInv_0.data_0[i32(1)][i32(2)], params_0.viewInv_0.data_0[i32(2)][i32(2)], params_0.viewInv_0.data_0[i32(3)][i32(2)], params_0.viewInv_0.data_0[i32(0)][i32(3)], params_0.viewInv_0.data_0[i32(1)][i32(3)], params_0.viewInv_0.data_0[i32(2)][i32(3)], params_0.viewInv_0.data_0[i32(3)][i32(3)])))).xyz);
+    var worldDir_0 : vec3<f32> = normalize((((vec4<f32>(normalize(viewPos4_0.xyz / vec3<f32>(viewPos4_0.w)), 0.0f)) * (mat4x4<f32>(params_0.viewInv_0.data_0[i32(0)][i32(0)], params_0.viewInv_0.data_0[i32(1)][i32(0)], params_0.viewInv_0.data_0[i32(2)][i32(0)], params_0.viewInv_0.data_0[i32(3)][i32(0)], params_0.viewInv_0.data_0[i32(0)][i32(1)], params_0.viewInv_0.data_0[i32(1)][i32(1)], params_0.viewInv_0.data_0[i32(2)][i32(1)], params_0.viewInv_0.data_0[i32(3)][i32(1)], params_0.viewInv_0.data_0[i32(0)][i32(2)], params_0.viewInv_0.data_0[i32(1)][i32(2)], params_0.viewInv_0.data_0[i32(2)][i32(2)], params_0.viewInv_0.data_0[i32(3)][i32(2)], params_0.viewInv_0.data_0[i32(0)][i32(3)], params_0.viewInv_0.data_0[i32(1)][i32(3)], params_0.viewInv_0.data_0[i32(2)][i32(3)], params_0.viewInv_0.data_0[i32(3)][i32(3)])))).xyz);
     var worldOri_0 : vec3<f32> = (((vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f)) * (mat4x4<f32>(params_0.viewInv_0.data_0[i32(0)][i32(0)], params_0.viewInv_0.data_0[i32(1)][i32(0)], params_0.viewInv_0.data_0[i32(2)][i32(0)], params_0.viewInv_0.data_0[i32(3)][i32(0)], params_0.viewInv_0.data_0[i32(0)][i32(1)], params_0.viewInv_0.data_0[i32(1)][i32(1)], params_0.viewInv_0.data_0[i32(2)][i32(1)], params_0.viewInv_0.data_0[i32(3)][i32(1)], params_0.viewInv_0.data_0[i32(0)][i32(2)], params_0.viewInv_0.data_0[i32(1)][i32(2)], params_0.viewInv_0.data_0[i32(2)][i32(2)], params_0.viewInv_0.data_0[i32(3)][i32(2)], params_0.viewInv_0.data_0[i32(0)][i32(3)], params_0.viewInv_0.data_0[i32(1)][i32(3)], params_0.viewInv_0.data_0[i32(2)][i32(3)], params_0.viewInv_0.data_0[i32(3)][i32(3)])))).xyz;
     var tHit_0 : vec2<f32> = IntersectAABB_0(worldOri_0, worldDir_0, params_0.volumeMin_0, params_0.volumeMax_0);
-    var _S27 : f32 = tHit_0.x;
-    var _S28 : f32 = tHit_0.y;
-    var _S29 : bool;
-    if(_S27 > _S28)
+    var _S26 : f32 = tHit_0.x;
+    var _S27 : f32 = tHit_0.y;
+    var _S28 : bool;
+    if(_S26 > _S27)
     {
-        _S29 = true;
+        _S28 = true;
     }
     else
     {
-        _S29 = _S28 < 0.0f;
+        _S28 = _S27 < 0.0f;
     }
-    if(_S29)
+    if(_S28)
     {
         return;
     }
-    var _S30 : f32 = max(_S27, 0.0f);
+    var _S29 : f32 = max(_S26, 0.0f);
     var accColor_1 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
     var accAlpha_1 : f32 = 0.0f;
-    var _S31 : i32 = i32((_S28 - _S30) / params_0.stepSize_0) + i32(1);
+    var _S30 : i32 = i32((_S27 - _S29) / params_0.stepSize_0) + i32(1);
     var i_0 : i32 = i32(0);
     for(;;)
     {
-        if(i_0 < _S31)
+        if(i_0 < _S30)
         {
         }
         else
         {
             break;
         }
-        var tCurr_0 : f32 = _S30 + f32(i_0) * params_0.stepSize_0;
-        if(tCurr_0 > _S28)
+        var tCurr_0 : f32 = _S29 + f32(i_0) * params_0.stepSize_0;
+        if(tCurr_0 > _S27)
         {
             break;
         }
-        var _S32 : vec4<f32> = ApplyTransferFunction_0(params_0.tfSize_0, sampleVolume_0(worldOri_0 + vec3<f32>(tCurr_0) * worldDir_0), params_0.valueRangeMin_0, params_0.valueRangeMax_0);
-        CompositeFrontToBack_0(&(accColor_1), &(accAlpha_1), _S32, clamp(_S32.w * params_0.densityScale_0 * params_0.stepSize_0, 0.0f, 1.0f));
+        var _S31 : vec4<f32> = ApplyTransferFunction_0(params_0.tfSize_0, sampleVolume_0(worldOri_0 + vec3<f32>(tCurr_0) * worldDir_0), params_0.valueRangeMin_0, params_0.valueRangeMax_0);
+        CompositeFrontToBack_0(&(accColor_1), &(accAlpha_1), _S31, clamp(_S31.w * params_0.densityScale_0 * params_0.stepSize_0, 0.0f, 1.0f));
         if(accAlpha_1 >= 0.99000000953674316f)
         {
             break;

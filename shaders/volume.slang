@@ -49,9 +49,7 @@ void vol_main(uint3 gid : SV_DispatchThreadID)
 
     float4 clipPos  = float4(ndcX, ndcY, -1.f, 1.f);
     float4 viewPos4 = mul(params.projInv, clipPos);
-    float3 viewDir  = normalize(float3(viewPos4.x / viewPos4.w,
-                                       viewPos4.y / viewPos4.w,
-                                       -1.f));
+    float3 viewDir  = normalize(viewPos4.xyz / viewPos4.w);
     float3 worldDir = normalize(mul(params.viewInv, float4(viewDir, 0.f)).xyz);
     float3 worldOri = mul(params.viewInv, float4(0.f, 0.f, 0.f, 1.f)).xyz;
 
