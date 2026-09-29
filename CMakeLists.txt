@@ -244,4 +244,9 @@ if(BUILD_WEBGPU_EXAMPLE)
   target_link_libraries(surface_demo_simple PRIVATE anari::anari)
   target_include_directories(surface_demo_simple
                              PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
+
+  add_executable(scivis_volume_demo examples/scivis_volume_demo.cpp)
+  target_link_libraries(scivis_volume_demo PRIVATE anari::anari)
+  target_include_directories(scivis_volume_demo
+                             PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
 endif()
