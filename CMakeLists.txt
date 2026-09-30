@@ -249,4 +249,20 @@ if(BUILD_WEBGPU_EXAMPLE)
   target_link_libraries(scivis_volume_demo PRIVATE anari::anari)
   target_include_directories(scivis_volume_demo
                              PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
+
+  find_path(NETCDF_INCLUDE_DIR NAMES netcdf.h
+    HINTS /opt/homebrew/include /usr/local/include)
+  find_library(NETCDF_LIBRARY NAMES netcdf
+    HINTS /opt/homebrew/lib /usr/local/lib)
+
+  if(NETCDF_INCLUDE_DIR AND NETCDF_LIBRARY)
+    add_executable(exodus_disk_demo examples/exodus_disk_demo.cpp)
+    target_link_libraries(exodus_disk_demo PRIVATE anari::anari "${NETCDF_LIBRARY}")
+    target_include_directories(exodus_disk_demo
+                               PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
+                                       "${NETCDF_INCLUDE_DIR}")
+    message(STATUS "anari-webgpu: netCDF found — building exodus_disk_demo")
+  else()
+    message(STATUS "anari-webgpu: netCDF not found — skipping exodus_disk_demo")
+  endif()
 endif()
