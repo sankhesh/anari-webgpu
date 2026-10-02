@@ -1,8 +1,19 @@
 // Copyright 2026 The anari-webgpu Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import vtkslang_core;
 import anari_raster_common;
+import vtkslang_shading;
+
+type_param M : IMaterial;
+type_param L : ILightingModel;
+typealias Default_IMaterial      = HostDrivenMaterial;
+typealias Default_ILightingModel = CookTorranceLighting;
+
+struct Shading<TM : IMaterial, TL : ILightingModel>
+{
+    TM material;
+    TL lighting;
+};
 
 struct PBRUniforms
 {
@@ -31,6 +42,7 @@ struct PBRUniforms
 [vk::binding(4, 0)] StructuredBuffer<float>        normals;
 [vk::binding(5, 0)] StructuredBuffer<float>        colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>         indices;
+ParameterBlock<Shading<M, L>>                      shading;
 
 float3 pbr_getPos(uint i)   { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 pbr_getNorm(uint i)  { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
@@ -39,32 +51,6 @@ float4 pbr_getColor(uint i) { return float4(colors[i*4u],    colors[i*4u+1u],   
 uint3 pbr_triangleIndices(uint triIdx)
 {
     return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
-}
-
-float D_GGX(float NdotH, float alpha)
-{
-    float a2 = alpha * alpha;
-    float d  = NdotH * NdotH * (a2 - 1.f) + 1.f;
-    return a2 / (PI * d * d + 1e-4f);
-}
-
-float G_SchlickGGX(float NdotX, float roughness)
-{
-    float r = roughness + 1.f;
-    float k = (r * r) / 8.f;
-    return NdotX / (NdotX * (1.f - k) + k + 1e-4f);
-}
-
-float G_Smith(float NdotV, float NdotL, float roughness)
-{
-    return G_SchlickGGX(NdotV, roughness) * G_SchlickGGX(NdotL, roughness);
-}
-
-float3 F_Schlick(float cosTheta, float3 F0)
-{
-    float  t  = clamp(1.f - cosTheta, 0.f, 1.f);
-    float  t5 = t * t * t * t * t;
-    return F0 + (float3(1.f, 1.f, 1.f) - F0) * t5;
 }
 
 [shader("compute")]
@@ -112,11 +98,9 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
     if (!setupScreenTriangle(params.mvp, p0, p1, p2, params.width, params.height, t))
         return;
 
-    float metallic  = params.metallicRoughness.x;
-    float roughness = params.metallicRoughness.y;
-    float alpha     = roughness * roughness;
-
-    float3 L = normalize(-params.lightDir);
+    LightSample light;
+    light.direction = normalize(-params.lightDir);
+    light.radiance  = params.lightIrradiance * params.lightColor;
 
     for (int py = int(t.minY); py <= int(t.maxY); py++) {
         for (int px = int(t.minX); px <= int(t.maxX); px++) {
@@ -138,44 +122,35 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
             else
                 N = normalize(cross(p1-p0, p2-p0));
 
-            float3 ndcC = t.ndc0*w0 + t.ndc1*w1 + t.ndc2*w2;
-            float3 V    = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
-            float3 H    = normalize(V + L);
-
-            float NdotL = max(dot(N, L), 0.f);
-            float NdotV = max(dot(N, V), 1e-4f);
-            float NdotH = max(dot(N, H), 0.f);
-            float HdotV = max(dot(H, V), 0.f);
-
             float3 baseRGB = params.baseColor.rgb;
             if (params.hasColors != 0u) {
                 float4 vc = pbr_getColor(i0)*w0 + pbr_getColor(i1)*w1 + pbr_getColor(i2)*w2;
                 baseRGB = baseRGB * vc.rgb;
             }
 
-            float3 F0       = lerp(float3(0.04f, 0.04f, 0.04f), baseRGB, metallic);
-            float  D        = D_GGX(NdotH, alpha);
-            float  G        = G_Smith(NdotV, NdotL, roughness);
-            float3 F        = F_Schlick(HdotV, F0);
-            float3 specular = (D * G * F) / (4.f * NdotV * NdotL + 1e-4f);
-            float3 kD       = (float3(1.f, 1.f, 1.f) - F) * (1.f - metallic);
-            float3 diffuse  = kD * baseRGB / PI;
+            SurfaceSample s;
+            s.position = p0*w0 + p1*w1 + p2*w2;
+            s.normal   = N;
+            float3 ndcC = t.ndc0*w0 + t.ndc1*w1 + t.ndc2*w2;
+            s.viewDir  = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
+            s.host.baseColor = baseRGB;
+            s.host.opacity   = params.baseColor.a;
+            s.host.metallic  = params.metallicRoughness.x;
+            s.host.roughness = params.metallicRoughness.y;
+            s.host.emissive  = params.emissive.xyz * params.emissive.w;
 
-            float3 irr = params.lightIrradiance * params.lightColor;
-            float3 Lo  = (diffuse + specular) * irr * NdotL;
-            Lo        += params.ambientRadiance * baseRGB;
-
-            Lo = tonemapAndGamma(Lo);
-
-            Lo += params.emissive.xyz * params.emissive.w;
+            MaterialSample m = shading.material.evaluate(s);
+            float3 radiance  = shading.lighting.ambient(m, s, float3(params.ambientRadiance))
+                             + shading.lighting.direct(m, s, light);
+            float3 Lo = shading.lighting.resolve(radiance, m) + m.emissive;
 
             float fragAlpha;
             if (params.alphaMode == 2u) {
-                if (params.baseColor.a < params.alphaCutoff)
+                if (m.opacity < params.alphaCutoff)
                     continue;
                 fragAlpha = 1.f;
             } else if (params.alphaMode == 1u) {
-                fragAlpha = params.baseColor.a;
+                fragAlpha = m.opacity;
             } else {
                 fragAlpha = 1.f;
             }

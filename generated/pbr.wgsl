@@ -249,29 +249,109 @@ fn pbr_getColor_0( i_3 : u32) -> vec4<f32>
     return vec4<f32>(colors_0[_S26], colors_0[_S26 + u32(1)], colors_0[_S26 + u32(2)], colors_0[_S26 + u32(3)]);
 }
 
-fn D_GGX_0( NdotH_0 : f32,  alpha_0 : f32) -> f32
+struct LightSample_0
+{
+     direction_0 : vec3<f32>,
+     radiance_0 : vec3<f32>,
+};
+
+struct HostMaterial_0
+{
+     baseColor_1 : vec3<f32>,
+     opacity_0 : f32,
+     metallic_0 : f32,
+     roughness_0 : f32,
+     emissive_1 : vec3<f32>,
+     ambientColor_0 : vec3<f32>,
+     specularColor_0 : vec3<f32>,
+     specularPower_0 : f32,
+};
+
+struct SurfaceSample_0
+{
+     position_0 : vec3<f32>,
+     normal_0 : vec3<f32>,
+     viewDir_0 : vec3<f32>,
+     uv_0 : vec2<f32>,
+     scalar_0 : f32,
+     userData_0 : vec4<u32>,
+     host_0 : HostMaterial_0,
+};
+
+struct MaterialSample_0
+{
+     baseColor_2 : vec3<f32>,
+     opacity_1 : f32,
+     metallic_1 : f32,
+     roughness_1 : f32,
+     emissive_2 : vec3<f32>,
+     ambientColor_1 : vec3<f32>,
+     specularColor_1 : vec3<f32>,
+     specularPower_1 : f32,
+};
+
+fn MaterialSample_x24init_0( baseColor_3 : vec3<f32>,  opacity_2 : f32,  metallic_2 : f32,  roughness_2 : f32,  emissive_3 : vec3<f32>,  ambientColor_2 : vec3<f32>,  specularColor_2 : vec3<f32>,  specularPower_2 : f32) -> MaterialSample_0
+{
+    var _S27 : MaterialSample_0;
+    _S27.baseColor_2 = baseColor_3;
+    _S27.opacity_1 = opacity_2;
+    _S27.metallic_1 = metallic_2;
+    _S27.roughness_1 = roughness_2;
+    _S27.emissive_2 = emissive_3;
+    _S27.ambientColor_1 = ambientColor_2;
+    _S27.specularColor_1 = specularColor_2;
+    _S27.specularPower_1 = specularPower_2;
+    return _S27;
+}
+
+fn HostDrivenMaterial_evaluate_0( s_0 : SurfaceSample_0) -> MaterialSample_0
+{
+    var _S28 : vec3<f32> = vec3<f32>(0.0f);
+    var m_0 : MaterialSample_0 = MaterialSample_x24init_0(vec3<f32>(1.0f), 1.0f, 0.0f, 1.0f, _S28, _S28, _S28, 1.0f);
+    m_0.baseColor_2 = s_0.host_0.baseColor_1;
+    m_0.opacity_1 = s_0.host_0.opacity_0;
+    m_0.metallic_1 = s_0.host_0.metallic_0;
+    m_0.roughness_1 = s_0.host_0.roughness_0;
+    m_0.emissive_2 = s_0.host_0.emissive_1;
+    m_0.ambientColor_1 = s_0.host_0.ambientColor_0;
+    m_0.specularColor_1 = s_0.host_0.specularColor_0;
+    m_0.specularPower_1 = s_0.host_0.specularPower_0;
+    return m_0;
+}
+
+fn CookTorranceLighting_ambient_0( m_1 : MaterialSample_0,  s_1 : SurfaceSample_0,  ambientRadiance_1 : vec3<f32>) -> vec3<f32>
+{
+    return ambientRadiance_1 * m_1.baseColor_2;
+}
+
+fn CookTorranceLighting_D_GGX_0( NdotH_0 : f32,  alpha_0 : f32) -> f32
 {
     var a2_0 : f32 = alpha_0 * alpha_0;
     var d_1 : f32 = NdotH_0 * NdotH_0 * (a2_0 - 1.0f) + 1.0f;
     return a2_0 / (3.14159274101257324f * d_1 * d_1 + 0.00009999999747379f);
 }
 
-fn G_SchlickGGX_0( NdotX_0 : f32,  roughness_0 : f32) -> f32
+fn CookTorranceLighting_G_SchlickGGX_0( NdotX_0 : f32,  roughness_3 : f32) -> f32
 {
-    var r_0 : f32 = roughness_0 + 1.0f;
+    var r_0 : f32 = roughness_3 + 1.0f;
     var k_0 : f32 = r_0 * r_0 / 8.0f;
     return NdotX_0 / (NdotX_0 * (1.0f - k_0) + k_0 + 0.00009999999747379f);
 }
 
-fn G_Smith_0( NdotV_0 : f32,  NdotL_0 : f32,  roughness_1 : f32) -> f32
-{
-    return G_SchlickGGX_0(NdotV_0, roughness_1) * G_SchlickGGX_0(NdotL_0, roughness_1);
-}
-
-fn F_Schlick_0( cosTheta_0 : f32,  F0_0 : vec3<f32>) -> vec3<f32>
+fn CookTorranceLighting_F_Schlick_0( cosTheta_0 : f32,  F0_0 : vec3<f32>) -> vec3<f32>
 {
     var t_4 : f32 = clamp(1.0f - cosTheta_0, 0.0f, 1.0f);
-    return F0_0 + (vec3<f32>(1.0f, 1.0f, 1.0f) - F0_0) * vec3<f32>((t_4 * t_4 * t_4 * t_4 * t_4));
+    return F0_0 + (vec3<f32>(1.0f) - F0_0) * vec3<f32>((t_4 * t_4 * t_4 * t_4 * t_4));
+}
+
+fn CookTorranceLighting_direct_0( m_2 : MaterialSample_0,  s_2 : SurfaceSample_0,  light_0 : LightSample_0) -> vec3<f32>
+{
+    var H_1 : vec3<f32> = normalize(s_2.viewDir_0 + light_0.direction_0);
+    var _S29 : f32 = max(dot(s_2.normal_0, light_0.direction_0), 0.0f);
+    var _S30 : f32 = max(dot(s_2.normal_0, s_2.viewDir_0), 0.00009999999747379f);
+    var _S31 : f32 = m_2.roughness_1;
+    var F_0 : vec3<f32> = CookTorranceLighting_F_Schlick_0(max(dot(H_1, s_2.viewDir_0), 0.0f), mix(vec3<f32>(0.03999999910593033f), m_2.baseColor_2, vec3<f32>(m_2.metallic_1)));
+    return ((vec3<f32>(1.0f) - F_0) * vec3<f32>((1.0f - m_2.metallic_1)) * m_2.baseColor_2 / vec3<f32>(3.14159274101257324f) + vec3<f32>((CookTorranceLighting_D_GGX_0(max(dot(s_2.normal_0, H_1), 0.0f), _S31 * _S31) * (CookTorranceLighting_G_SchlickGGX_0(_S30, m_2.roughness_1) * CookTorranceLighting_G_SchlickGGX_0(_S29, m_2.roughness_1)))) * F_0 / vec3<f32>((4.0f * _S30 * _S29 + 0.00009999999747379f))) * light_0.radiance_0 * vec3<f32>(_S29);
 }
 
 fn gammaCorrect_0( c_1 : f32) -> f32
@@ -283,6 +363,11 @@ fn tonemapAndGamma_0( color_0 : vec3<f32>) -> vec3<f32>
 {
     var tm_0 : vec3<f32> = color_0 / (color_0 + vec3<f32>(1.0f, 1.0f, 1.0f));
     return vec3<f32>(gammaCorrect_0(tm_0.x), gammaCorrect_0(tm_0.y), gammaCorrect_0(tm_0.z));
+}
+
+fn CookTorranceLighting_resolve_0( radiance_1 : vec3<f32>,  m_3 : MaterialSample_0) -> vec3<f32>
+{
+    return tonemapAndGamma_0(radiance_1);
 }
 
 @compute
@@ -302,15 +387,14 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
     var p1_1 : vec3<f32> = pbr_getPos_0(i1_0);
     var p2_1 : vec3<f32> = pbr_getPos_0(i2_0);
     var t_5 : ScreenTriangle_0;
-    var _S27 : bool = setupScreenTriangle_0(mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]), p0_1, p1_1, p2_1, params_0.width_0, params_0.height_0, &(t_5));
-    if(!_S27)
+    var _S32 : bool = setupScreenTriangle_0(mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]), p0_1, p1_1, p2_1, params_0.width_0, params_0.height_0, &(t_5));
+    if(!_S32)
     {
         return;
     }
-    var _S28 : f32 = params_0.metallicRoughness_0.x;
-    var roughness_2 : f32 = params_0.metallicRoughness_0.y;
-    var _S29 : f32 = roughness_2 * roughness_2;
-    var _S30 : vec3<f32> = normalize((vec3<f32>(0) - params_0.lightDir_0));
+    var light_1 : LightSample_0;
+    light_1.direction_0 = normalize((vec3<f32>(0) - params_0.lightDir_0));
+    light_1.radiance_0 = vec3<f32>(params_0.lightIrradiance_0) * params_0.lightColor_0;
     var py_2 : i32 = i32(t_5.minY_0);
     for(;;)
     {
@@ -342,8 +426,8 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             var w2_0 : f32 = w_3.z;
             var pixIdx_0 : u32 = u32(py_2) * params_0.width_0 + u32(px_2);
             var dU_0 : u32 = depthToU32_0(interpolateDepth_0(t_5, w_3));
-            var _S31 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
-            if(dU_0 > (_S31 + u32(256)))
+            var _S33 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
+            if(dU_0 > (_S33 + u32(256)))
             {
                 px_2 = px_2 + i32(1);
                 continue;
@@ -357,13 +441,6 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             {
                 N_0 = normalize(cross(p1_1 - p0_1, p2_1 - p0_1));
             }
-            var ndcC_0 : vec3<f32> = t_5.ndc0_0 * vec3<f32>(w0_0) + t_5.ndc1_0 * vec3<f32>(w1_0) + t_5.ndc2_0 * vec3<f32>(w2_0);
-            var V_0 : vec3<f32> = normalize(vec3<f32>(- ndcC_0.x, - ndcC_0.y, 1.0f));
-            var H_1 : vec3<f32> = normalize(V_0 + _S30);
-            var _S32 : f32 = max(dot(N_0, _S30), 0.0f);
-            var _S33 : f32 = max(dot(N_0, V_0), 0.00009999999747379f);
-            var _S34 : f32 = max(dot(N_0, H_1), 0.0f);
-            var _S35 : f32 = max(dot(H_1, V_0), 0.0f);
             var baseRGB_0 : vec3<f32> = params_0.baseColor_0.xyz;
             var baseRGB_1 : vec3<f32>;
             if((params_0.hasColors_0) != u32(0))
@@ -374,12 +451,25 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             {
                 baseRGB_1 = baseRGB_0;
             }
-            var F_0 : vec3<f32> = F_Schlick_0(_S35, mix(vec3<f32>(0.03999999910593033f, 0.03999999910593033f, 0.03999999910593033f), baseRGB_1, vec3<f32>(_S28)));
-            var Lo_0 : vec3<f32> = tonemapAndGamma_0(((vec3<f32>(1.0f, 1.0f, 1.0f) - F_0) * vec3<f32>((1.0f - _S28)) * baseRGB_1 / vec3<f32>(3.14159274101257324f) + vec3<f32>((D_GGX_0(_S34, _S29) * G_Smith_0(_S33, _S32, roughness_2))) * F_0 / vec3<f32>((4.0f * _S33 * _S32 + 0.00009999999747379f))) * (vec3<f32>(params_0.lightIrradiance_0) * params_0.lightColor_0) * vec3<f32>(_S32) + vec3<f32>(params_0.ambientRadiance_0) * baseRGB_1) + params_0.emissive_0.xyz * vec3<f32>(params_0.emissive_0.w);
+            var s_3 : SurfaceSample_0;
+            var _S34 : vec3<f32> = vec3<f32>(w0_0);
+            var _S35 : vec3<f32> = vec3<f32>(w1_0);
+            var _S36 : vec3<f32> = vec3<f32>(w2_0);
+            s_3.position_0 = p0_1 * _S34 + p1_1 * _S35 + p2_1 * _S36;
+            s_3.normal_0 = N_0;
+            var ndcC_0 : vec3<f32> = t_5.ndc0_0 * _S34 + t_5.ndc1_0 * _S35 + t_5.ndc2_0 * _S36;
+            s_3.viewDir_0 = normalize(vec3<f32>(- ndcC_0.x, - ndcC_0.y, 1.0f));
+            s_3.host_0.baseColor_1 = baseRGB_1;
+            s_3.host_0.opacity_0 = params_0.baseColor_0.w;
+            s_3.host_0.metallic_0 = params_0.metallicRoughness_0.x;
+            s_3.host_0.roughness_0 = params_0.metallicRoughness_0.y;
+            s_3.host_0.emissive_1 = params_0.emissive_0.xyz * vec3<f32>(params_0.emissive_0.w);
+            var _S37 : MaterialSample_0 = HostDrivenMaterial_evaluate_0(s_3);
+            var Lo_0 : vec3<f32> = CookTorranceLighting_resolve_0(CookTorranceLighting_ambient_0(_S37, s_3, vec3<f32>(params_0.ambientRadiance_0)) + CookTorranceLighting_direct_0(_S37, s_3, light_1), _S37) + _S37.emissive_2;
             var fragAlpha_0 : f32;
             if((params_0.alphaMode_0) == u32(2))
             {
-                if((params_0.baseColor_0.w) < (params_0.alphaCutoff_0))
+                if((_S37.opacity_1) < (params_0.alphaCutoff_0))
                 {
                     px_2 = px_2 + i32(1);
                     continue;
@@ -390,7 +480,7 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             {
                 if((params_0.alphaMode_0) == u32(1))
                 {
-                    fragAlpha_0 = params_0.baseColor_0.w;
+                    fragAlpha_0 = _S37.opacity_1;
                 }
                 else
                 {

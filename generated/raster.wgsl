@@ -245,6 +245,91 @@ fn getColor_0( i_3 : u32) -> vec4<f32>
     return vec4<f32>(colors_0[_S26], colors_0[_S26 + u32(1)], colors_0[_S26 + u32(2)], colors_0[_S26 + u32(3)]);
 }
 
+struct LightSample_0
+{
+     direction_0 : vec3<f32>,
+     radiance_0 : vec3<f32>,
+};
+
+struct HostMaterial_0
+{
+     baseColor_0 : vec3<f32>,
+     opacity_0 : f32,
+     metallic_0 : f32,
+     roughness_0 : f32,
+     emissive_0 : vec3<f32>,
+     ambientColor_0 : vec3<f32>,
+     specularColor_0 : vec3<f32>,
+     specularPower_0 : f32,
+};
+
+struct SurfaceSample_0
+{
+     position_0 : vec3<f32>,
+     normal_0 : vec3<f32>,
+     viewDir_0 : vec3<f32>,
+     uv_0 : vec2<f32>,
+     scalar_0 : f32,
+     userData_0 : vec4<u32>,
+     host_0 : HostMaterial_0,
+};
+
+struct MaterialSample_0
+{
+     baseColor_1 : vec3<f32>,
+     opacity_1 : f32,
+     metallic_1 : f32,
+     roughness_1 : f32,
+     emissive_1 : vec3<f32>,
+     ambientColor_1 : vec3<f32>,
+     specularColor_1 : vec3<f32>,
+     specularPower_1 : f32,
+};
+
+fn MaterialSample_x24init_0( baseColor_2 : vec3<f32>,  opacity_2 : f32,  metallic_2 : f32,  roughness_2 : f32,  emissive_2 : vec3<f32>,  ambientColor_2 : vec3<f32>,  specularColor_2 : vec3<f32>,  specularPower_2 : f32) -> MaterialSample_0
+{
+    var _S27 : MaterialSample_0;
+    _S27.baseColor_1 = baseColor_2;
+    _S27.opacity_1 = opacity_2;
+    _S27.metallic_1 = metallic_2;
+    _S27.roughness_1 = roughness_2;
+    _S27.emissive_1 = emissive_2;
+    _S27.ambientColor_1 = ambientColor_2;
+    _S27.specularColor_1 = specularColor_2;
+    _S27.specularPower_1 = specularPower_2;
+    return _S27;
+}
+
+fn HostDrivenMaterial_evaluate_0( s_0 : SurfaceSample_0) -> MaterialSample_0
+{
+    var _S28 : vec3<f32> = vec3<f32>(0.0f);
+    var m_0 : MaterialSample_0 = MaterialSample_x24init_0(vec3<f32>(1.0f), 1.0f, 0.0f, 1.0f, _S28, _S28, _S28, 1.0f);
+    m_0.baseColor_1 = s_0.host_0.baseColor_0;
+    m_0.opacity_1 = s_0.host_0.opacity_0;
+    m_0.metallic_1 = s_0.host_0.metallic_0;
+    m_0.roughness_1 = s_0.host_0.roughness_0;
+    m_0.emissive_1 = s_0.host_0.emissive_0;
+    m_0.ambientColor_1 = s_0.host_0.ambientColor_0;
+    m_0.specularColor_1 = s_0.host_0.specularColor_0;
+    m_0.specularPower_1 = s_0.host_0.specularPower_0;
+    return m_0;
+}
+
+fn LambertLighting_ambient_0( m_1 : MaterialSample_0,  s_1 : SurfaceSample_0,  ambientRadiance_1 : vec3<f32>) -> vec3<f32>
+{
+    return m_1.baseColor_1 * ambientRadiance_1;
+}
+
+fn LambertLighting_direct_0( m_2 : MaterialSample_0,  s_2 : SurfaceSample_0,  light_0 : LightSample_0) -> vec3<f32>
+{
+    return m_2.baseColor_1 * light_0.radiance_0 * vec3<f32>(max(dot(s_2.normal_0, light_0.direction_0), 0.0f));
+}
+
+fn LambertLighting_resolve_0( radiance_1 : vec3<f32>,  m_3 : MaterialSample_0) -> vec3<f32>
+{
+    return min(radiance_1, m_3.baseColor_1);
+}
+
 @compute
 @workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
@@ -255,47 +340,49 @@ fn main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
         return;
     }
     var i_4 : vec3<u32> = triangleIndices_0(triIdx_2);
-    var _S27 : u32 = i_4.x;
-    var p0_1 : vec3<f32> = getPosition_0(_S27);
-    var _S28 : u32 = i_4.y;
-    var p1_1 : vec3<f32> = getPosition_0(_S28);
-    var _S29 : u32 = i_4.z;
-    var p2_1 : vec3<f32> = getPosition_0(_S29);
+    var _S29 : u32 = i_4.x;
+    var p0_1 : vec3<f32> = getPosition_0(_S29);
+    var _S30 : u32 = i_4.y;
+    var p1_1 : vec3<f32> = getPosition_0(_S30);
+    var _S31 : u32 = i_4.z;
+    var p2_1 : vec3<f32> = getPosition_0(_S31);
     var t_4 : ScreenTriangle_0;
-    var _S30 : bool = setupScreenTriangle_0(mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]), p0_1, p1_1, p2_1, params_0.width_0, params_0.height_0, &(t_4));
-    if(!_S30)
+    var _S32 : bool = setupScreenTriangle_0(mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]), p0_1, p1_1, p2_1, params_0.width_0, params_0.height_0, &(t_4));
+    if(!_S32)
     {
         return;
     }
     var faceNormal_0 : vec3<f32>;
     if((params_0.hasNormals_0) != u32(0))
     {
-        faceNormal_0 = normalize((getNormal_0(_S27) + getNormal_0(_S28) + getNormal_0(_S29)) / vec3<f32>(3.0f));
+        faceNormal_0 = normalize((getNormal_0(_S29) + getNormal_0(_S30) + getNormal_0(_S31)) / vec3<f32>(3.0f));
     }
     else
     {
         faceNormal_0 = normalize(cross(p1_1 - p0_1, p2_1 - p0_1));
     }
-    var _S31 : f32 = min(max(dot(faceNormal_0, normalize((vec3<f32>(0) - params_0.lightDir_0))), 0.0f) + params_0.ambientRadiance_0, 1.0f);
-    var _S32 : vec4<f32> = params_0.materialColor_0;
+    var light_1 : LightSample_0;
+    light_1.direction_0 = normalize((vec3<f32>(0) - params_0.lightDir_0));
+    light_1.radiance_0 = vec3<f32>(1.0f);
     var _S33 : vec4<f32> = params_0.materialColor_0;
     var _S34 : vec4<f32> = params_0.materialColor_0;
+    var _S35 : vec4<f32> = params_0.materialColor_0;
     var c0_1 : vec4<f32>;
     var c1_1 : vec4<f32>;
     var c2_1 : vec4<f32>;
     if((params_0.hasColors_0) != u32(0))
     {
-        var _S35 : vec4<f32> = getColor_0(_S28) * params_0.materialColor_0;
-        var _S36 : vec4<f32> = getColor_0(_S29) * params_0.materialColor_0;
-        c0_1 = getColor_0(_S27) * params_0.materialColor_0;
-        c1_1 = _S35;
-        c2_1 = _S36;
+        var _S36 : vec4<f32> = getColor_0(_S30) * params_0.materialColor_0;
+        var _S37 : vec4<f32> = getColor_0(_S31) * params_0.materialColor_0;
+        c0_1 = getColor_0(_S29) * params_0.materialColor_0;
+        c1_1 = _S36;
+        c2_1 = _S37;
     }
     else
     {
-        c0_1 = _S32;
-        c1_1 = _S33;
-        c2_1 = _S34;
+        c0_1 = _S33;
+        c1_1 = _S34;
+        c2_1 = _S35;
     }
     var py_2 : i32 = i32(t_4.minY_0);
     for(;;)
@@ -325,14 +412,23 @@ fn main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             }
             var pixIdx_0 : u32 = u32(py_2) * params_0.width_0 + u32(px_2);
             var dU_0 : u32 = depthToU32_0(interpolateDepth_0(t_4, w_3));
-            var _S37 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
-            if(dU_0 > (_S37 + u32(256)))
+            var _S38 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
+            if(dU_0 > (_S38 + u32(256)))
             {
                 px_2 = px_2 + i32(1);
                 continue;
             }
-            var color_0 : vec4<f32> = c0_1 * vec4<f32>(w_3.x) + c1_1 * vec4<f32>(w_3.y) + c2_1 * vec4<f32>(w_3.z);
-            colorBuf_0[pixIdx_0] = vec4<f32>(color_0.xyz * vec3<f32>(_S31), color_0.w);
+            var _S39 : f32 = w_3.x;
+            var _S40 : f32 = w_3.y;
+            var _S41 : f32 = w_3.z;
+            var color_0 : vec4<f32> = c0_1 * vec4<f32>(_S39) + c1_1 * vec4<f32>(_S40) + c2_1 * vec4<f32>(_S41);
+            var s_3 : SurfaceSample_0;
+            s_3.position_0 = p0_1 * vec3<f32>(_S39) + p1_1 * vec3<f32>(_S40) + p2_1 * vec3<f32>(_S41);
+            s_3.normal_0 = faceNormal_0;
+            s_3.host_0.baseColor_0 = color_0.xyz;
+            s_3.host_0.opacity_0 = color_0.w;
+            var _S42 : MaterialSample_0 = HostDrivenMaterial_evaluate_0(s_3);
+            colorBuf_0[pixIdx_0] = vec4<f32>(LambertLighting_resolve_0(LambertLighting_ambient_0(_S42, s_3, vec3<f32>(params_0.ambientRadiance_0)) + LambertLighting_direct_0(_S42, s_3, light_1), _S42) + _S42.emissive_1, _S42.opacity_1);
             px_2 = px_2 + i32(1);
         }
         py_2 = py_2 + i32(1);

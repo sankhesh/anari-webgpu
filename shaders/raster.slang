@@ -2,6 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import anari_raster_common;
+import vtkslang_shading;
+
+type_param M : IMaterial;
+type_param L : ILightingModel;
+typealias Default_IMaterial      = HostDrivenMaterial;
+typealias Default_ILightingModel = LambertLighting;
+
+struct Shading<TM : IMaterial, TL : ILightingModel>
+{
+    TM material;
+    TL lighting;
+};
 
 struct RasterUniforms
 {
@@ -26,6 +38,7 @@ struct RasterUniforms
 [vk::binding(4, 0)] StructuredBuffer<float>          normals;
 [vk::binding(5, 0)] StructuredBuffer<float>          colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>           indices;
+ParameterBlock<Shading<M, L>>                        shading;
 
 float3 getPosition(uint i) { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 getNormal(uint i)   { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
@@ -84,8 +97,9 @@ void main(uint3 gid : SV_DispatchThreadID)
     else
         faceNormal = normalize(cross(p1 - p0, p2 - p0));
 
-    float NdotL = max(dot(faceNormal, normalize(-params.lightDir)), 0.f);
-    float light = min(NdotL + params.ambientRadiance, 1.f);
+    LightSample light;
+    light.direction = normalize(-params.lightDir);
+    light.radiance  = float3(1.f);
 
     float4 c0 = params.materialColor;
     float4 c1 = params.materialColor;
@@ -108,7 +122,16 @@ void main(uint3 gid : SV_DispatchThreadID)
                 continue;
 
             float4 color = c0*w.x + c1*w.y + c2*w.z;
-            colorBuf[pixIdx] = float4(color.rgb * light, color.a);
+            SurfaceSample s;
+            s.position       = p0*w.x + p1*w.y + p2*w.z;
+            s.normal         = faceNormal;
+            s.host.baseColor = color.rgb;
+            s.host.opacity   = color.a;
+
+            MaterialSample m = shading.material.evaluate(s);
+            float3 radiance  = shading.lighting.ambient(m, s, float3(params.ambientRadiance))
+                             + shading.lighting.direct(m, s, light);
+            colorBuf[pixIdx] = float4(shading.lighting.resolve(radiance, m) + m.emissive, m.opacity);
         }
     }
 }
