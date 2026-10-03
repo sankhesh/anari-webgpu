@@ -5,6 +5,7 @@
 
 #include "camera/Camera.h"
 #include "renderer/Renderer.h"
+#include "material/Material.h"
 #include "world/World.h"
 // helium
 #include "helium/BaseFrame.h"
@@ -12,7 +13,10 @@
 // webgpu
 #include <webgpu/webgpu.h>
 // std
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 #include <vector>
 
 namespace anari_webgpu {
@@ -56,6 +60,26 @@ struct Frame : public helium::BaseFrame
   void initComputeResources();
   void cleanupComputeResources();
   WGPUShaderModule createBuiltinShader(WGPUDevice device, const char *name);
+
+  struct SlangPipelines
+  {
+    bool valid{false};
+    WGPUShaderModule shader{nullptr};
+    WGPUComputePipeline color{nullptr};
+    WGPUComputePipeline depth{nullptr};
+    WGPUBindGroupLayout parametersBGL{nullptr};
+    uint64_t parametersSize{0};
+    std::vector<vtkslang::UniformField> fields;
+  };
+  const SlangPipelines *slangPipelines(WGPUDevice device,
+      const char *shader,
+      WGPUBindGroupLayout group0,
+      const char *colorEntryPoint,
+      const char *depthEntryPoint,
+      const SlangOverride &slangOverride);
+  std::vector<uint8_t> packSlangParameters(
+      const SlangPipelines &p, const SlangOverride &slangOverride);
+  void reportOnce(ANARIStatusSeverity severity, const std::string &message);
   void writeSample(int x, int y, const PixelSample &s);
 
   void softwareRasterize();
@@ -104,6 +128,9 @@ struct Frame : public helium::BaseFrame
   WGPUComputePipeline m_volumePipeline{nullptr};
   WGPUShaderModule m_volumeShader{nullptr};
   WGPUBindGroupLayout m_volumeBGL{nullptr};
+
+  std::map<std::string, SlangPipelines> m_slangPipelines;
+  std::set<std::string> m_reportedMessages;
 
   bool m_gpuResourcesInitialized{false};
 };

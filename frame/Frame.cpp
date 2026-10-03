@@ -105,13 +105,13 @@ static WGPUBindGroupLayout makeBGL(WGPUDevice device,
 }
 
 static WGPUComputePipeline makePipeline(WGPUDevice device,
-    WGPUShaderModule shader, WGPUBindGroupLayout bgl, const char *label,
-    const char *entryPoint)
+    WGPUShaderModule shader, const WGPUBindGroupLayout *bgls, uint32_t bglCount,
+    const char *label, const char *entryPoint)
 {
   WGPUPipelineLayoutDescriptor plDesc{};
   plDesc.nextInChain = nullptr;
-  plDesc.bindGroupLayoutCount = 1;
-  plDesc.bindGroupLayouts = &bgl;
+  plDesc.bindGroupLayoutCount = bglCount;
+  plDesc.bindGroupLayouts = bgls;
   WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(device, &plDesc);
 
   WGPUComputePipelineDescriptor cpDesc{};
@@ -124,6 +124,13 @@ static WGPUComputePipeline makePipeline(WGPUDevice device,
   WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(device, &cpDesc);
   wgpuPipelineLayoutRelease(pl);
   return pipeline;
+}
+
+static WGPUComputePipeline makePipeline(WGPUDevice device,
+    WGPUShaderModule shader, WGPUBindGroupLayout bgl, const char *label,
+    const char *entryPoint)
+{
+  return makePipeline(device, shader, &bgl, 1, label, entryPoint);
 }
 
 static WGPUBindGroupLayoutEntry storageEntry(uint32_t binding, bool readOnly)
@@ -272,6 +279,112 @@ WGPUShaderModule Frame::createBuiltinShader(WGPUDevice device, const char *name)
   return vtkslang::createShaderModule(device, artifact, label.c_str());
 }
 
+void Frame::reportOnce(ANARIStatusSeverity severity, const std::string &message)
+{
+  if (m_reportedMessages.insert(message).second)
+    reportMessage(severity, "%s", message.c_str());
+}
+
+const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
+    const char *shader,
+    WGPUBindGroupLayout group0,
+    const char *colorEntryPoint,
+    const char *depthEntryPoint,
+    const SlangOverride &o)
+{
+  std::string key = std::string(shader) + '\0' + o.source + '\0' + o.materialType
+      + '\0' + o.lightingType;
+  auto it = m_slangPipelines.find(key);
+  if (it != m_slangPipelines.end())
+    return it->second.valid ? &it->second : nullptr;
+  SlangPipelines &p = m_slangPipelines[key];
+
+  vtkslang::CompileOptions options;
+  if (!o.source.empty())
+    options.modules.push_back(o.source);
+  if (!o.materialType.empty())
+    options.specializations.emplace_back("IMaterial", o.materialType);
+  if (!o.lightingType.empty())
+    options.specializations.emplace_back("ILightingModel", o.lightingType);
+  vtkslang::Artifact artifact =
+      m_slangCompiler.compileProgram(shaderProgram(shader), options);
+  if (!artifact) {
+    reportOnce(ANARI_SEVERITY_ERROR,
+        std::string("WEBGPU_MATERIAL_SLANG: '") + shader
+            + "' failed to compile with the material's overrides; using its "
+              "default shading:\n"
+            + artifact.diagnostics);
+    return nullptr;
+  }
+  for (const auto &b : artifact.bindings) {
+    if (b.group == 0)
+      continue;
+    if (b.group == 1 && b.binding == 0
+        && b.kind == vtkslang::BindingKind::UniformBuffer) {
+      p.parametersSize = b.sizeBytes;
+      p.fields = b.fields;
+      continue;
+    }
+    reportOnce(ANARI_SEVERITY_ERROR,
+        "WEBGPU_MATERIAL_SLANG: override parameters must be plain data; '"
+            + b.name + "' is not supported. Using the default shading.");
+    return nullptr;
+  }
+
+  const std::string label = std::string("anari_slang_") + shader;
+  p.shader = vtkslang::createShaderModule(device, artifact, label.c_str());
+  if (!p.shader)
+    return nullptr;
+  WGPUBindGroupLayout bgls[2] = {group0, nullptr};
+  uint32_t bglCount = 1;
+  if (p.parametersSize > 0) {
+    WGPUBindGroupLayoutEntry entry = uniformEntry(0);
+    entry.buffer.minBindingSize = p.parametersSize;
+    p.parametersBGL = makeBGL(device, &entry, 1);
+    bgls[1] = p.parametersBGL;
+    bglCount = 2;
+  }
+  p.color = makePipeline(
+      device, p.shader, bgls, bglCount, label.c_str(), colorEntryPoint);
+  p.depth = makePipeline(
+      device, p.shader, bgls, bglCount, label.c_str(), depthEntryPoint);
+  p.valid = p.color && p.depth;
+  return p.valid ? &p : nullptr;
+}
+
+std::vector<uint8_t> Frame::packSlangParameters(
+    const SlangPipelines &p, const SlangOverride &o)
+{
+  std::vector<uint8_t> data((p.parametersSize + 15) & ~uint64_t(15), 0);
+  for (const auto &[name, value] : o.parameters) {
+    const vtkslang::UniformField *field = nullptr;
+    for (const auto &f : p.fields)
+      field = f.name == name ? &f : field;
+    const ANARIDataType type = value.type();
+    const auto *src = static_cast<const uint8_t *>(value.data());
+    const uint64_t bytes = anari::sizeOf(type);
+    if (!field || anari::isObject(type) || type == ANARI_STRING) {
+      reportOnce(ANARI_SEVERITY_WARNING,
+          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name
+              + "' does not match a plain data field of the override types");
+      continue;
+    }
+    uint8_t *dst = data.data() + field->offset;
+    if (type == ANARI_FLOAT32_MAT3 && field->size >= 44) {
+      for (int c = 0; c < 3; ++c)
+        std::memcpy(dst + 16 * c, src + 12 * c, 12);
+    } else if (bytes <= field->size) {
+      std::memcpy(dst, src, bytes);
+    } else {
+      reportOnce(ANARI_SEVERITY_WARNING,
+          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' ("
+              + std::to_string(bytes) + " bytes) does not fit its field ("
+              + std::to_string(field->size) + " bytes)");
+    }
+  }
+  return data;
+}
+
 void Frame::cleanupComputeResources()
 {
   rel(m_readbackBuffer,  wgpuBufferRelease);
@@ -291,6 +404,15 @@ void Frame::cleanupComputeResources()
   rel(m_pbrDepthPipeline, wgpuComputePipelineRelease);
   rel(m_pbrShader,        wgpuShaderModuleRelease);
   rel(m_pbrBGL,           wgpuBindGroupLayoutRelease);
+
+  for (auto &entry : m_slangPipelines) {
+    SlangPipelines &p = entry.second;
+    rel(p.color,         wgpuComputePipelineRelease);
+    rel(p.depth,         wgpuComputePipelineRelease);
+    rel(p.shader,        wgpuShaderModuleRelease);
+    rel(p.parametersBGL, wgpuBindGroupLayoutRelease);
+  }
+  m_slangPipelines.clear();
 
   m_gpuResourcesInitialized = false;
 }
@@ -356,6 +478,22 @@ static WGPUBindGroup makeBindGroup7(WGPUDevice device, WGPUBindGroupLayout bgl,
   bgDesc.layout = bgl;
   bgDesc.entryCount = 7;
   bgDesc.entries = e;
+  return wgpuDeviceCreateBindGroup(device, &bgDesc);
+}
+
+static WGPUBindGroup makeBindGroup1(
+    WGPUDevice device, WGPUBindGroupLayout bgl, WGPUBuffer buffer, uint64_t size)
+{
+  WGPUBindGroupEntry e{};
+  e.binding = 0;
+  e.buffer = buffer;
+  e.offset = 0;
+  e.size = size;
+  WGPUBindGroupDescriptor bgDesc{};
+  bgDesc.nextInChain = nullptr;
+  bgDesc.layout = bgl;
+  bgDesc.entryCount = 1;
+  bgDesc.entries = &e;
   return wgpuDeviceCreateBindGroup(device, &bgDesc);
 }
 
@@ -549,6 +687,20 @@ void Frame::renderFrame()
                   ub, sizeof(pu),
                   posBuf, posSize, normBuf, normSize, colBuf, colSize, idxBuf, idxSize);
 
+              const SlangPipelines *sp = pbrMat->slangOverride().active()
+                  ? slangPipelines(device, "pbr", m_pbrBGL, "pbr_main", "pbr_depth_main", pbrMat->slangOverride())
+                  : nullptr;
+              WGPUComputePipeline depthPipeline = sp ? sp->depth : m_pbrDepthPipeline;
+              WGPUComputePipeline colorPipeline = sp ? sp->color : m_pbrPipeline;
+              WGPUBuffer slangBuf = nullptr;
+              WGPUBindGroup bg1 = nullptr;
+              if (sp && sp->parametersBGL) {
+                std::vector<uint8_t> values =
+                    packSlangParameters(*sp, pbrMat->slangOverride());
+                slangBuf = uploadUniform(device, queue, values.data(), values.size());
+                bg1 = makeBindGroup1(device, sp->parametersBGL, slangBuf, values.size());
+              }
+
               WGPUComputePassDescriptor passDesc{};
               passDesc.nextInChain = nullptr;
               passDesc.label = WGPUStringView{"anari_pbr_pass", 14};
@@ -556,8 +708,10 @@ void Frame::renderFrame()
               {
                 WGPUComputePassEncoder dpass =
                     wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
-                wgpuComputePassEncoderSetPipeline(dpass, m_pbrDepthPipeline);
+                wgpuComputePassEncoderSetPipeline(dpass, depthPipeline);
                 wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
+                if (bg1)
+                  wgpuComputePassEncoderSetBindGroup(dpass, 1, bg1, 0, nullptr);
                 wgpuComputePassEncoderDispatchWorkgroups(
                     dpass, (numTris + 255) / 256, 1, 1);
                 wgpuComputePassEncoderEnd(dpass);
@@ -565,14 +719,20 @@ void Frame::renderFrame()
               }
               WGPUComputePassEncoder pass =
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
-              wgpuComputePassEncoderSetPipeline(pass, m_pbrPipeline);
+              wgpuComputePassEncoderSetPipeline(pass, colorPipeline);
               wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+              if (bg1)
+                wgpuComputePassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
               wgpuComputePassEncoderDispatchWorkgroups(
                   pass, (numTris + 255) / 256, 1, 1);
               wgpuComputePassEncoderEnd(pass);
               wgpuComputePassEncoderRelease(pass);
               wgpuBindGroupRelease(bg);
               wgpuBufferRelease(ub);
+              if (bg1)
+                wgpuBindGroupRelease(bg1);
+              if (slangBuf)
+                wgpuBufferRelease(slangBuf);
 
             } else {
               float4 matColor = matteMat
@@ -603,6 +763,20 @@ void Frame::renderFrame()
                   ub, sizeof(ru),
                   posBuf, posSize, normBuf, normSize, colBuf, colSize, idxBuf, idxSize);
 
+              const SlangPipelines *sp = matteMat && matteMat->slangOverride().active()
+                  ? slangPipelines(device, "raster", m_rasterBGL, "main", "depth_main", matteMat->slangOverride())
+                  : nullptr;
+              WGPUComputePipeline depthPipeline = sp ? sp->depth : m_rasterDepthPipeline;
+              WGPUComputePipeline colorPipeline = sp ? sp->color : m_rasterPipeline;
+              WGPUBuffer slangBuf = nullptr;
+              WGPUBindGroup bg1 = nullptr;
+              if (sp && sp->parametersBGL) {
+                std::vector<uint8_t> values =
+                    packSlangParameters(*sp, matteMat->slangOverride());
+                slangBuf = uploadUniform(device, queue, values.data(), values.size());
+                bg1 = makeBindGroup1(device, sp->parametersBGL, slangBuf, values.size());
+              }
+
               WGPUComputePassDescriptor passDesc{};
               passDesc.nextInChain = nullptr;
               passDesc.label = WGPUStringView{"anari_raster_pass", 17};
@@ -610,8 +784,10 @@ void Frame::renderFrame()
               {
                 WGPUComputePassEncoder dpass =
                     wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
-                wgpuComputePassEncoderSetPipeline(dpass, m_rasterDepthPipeline);
+                wgpuComputePassEncoderSetPipeline(dpass, depthPipeline);
                 wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
+                if (bg1)
+                  wgpuComputePassEncoderSetBindGroup(dpass, 1, bg1, 0, nullptr);
                 wgpuComputePassEncoderDispatchWorkgroups(
                     dpass, (numTris + 255) / 256, 1, 1);
                 wgpuComputePassEncoderEnd(dpass);
@@ -619,14 +795,20 @@ void Frame::renderFrame()
               }
               WGPUComputePassEncoder pass =
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
-              wgpuComputePassEncoderSetPipeline(pass, m_rasterPipeline);
+              wgpuComputePassEncoderSetPipeline(pass, colorPipeline);
               wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+              if (bg1)
+                wgpuComputePassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
               wgpuComputePassEncoderDispatchWorkgroups(
                   pass, (numTris + 255) / 256, 1, 1);
               wgpuComputePassEncoderEnd(pass);
               wgpuComputePassEncoderRelease(pass);
               wgpuBindGroupRelease(bg);
               wgpuBufferRelease(ub);
+              if (bg1)
+                wgpuBindGroupRelease(bg1);
+              if (slangBuf)
+                wgpuBufferRelease(slangBuf);
             }
 
             wgpuBufferRelease(posBuf);
@@ -883,6 +1065,11 @@ void Frame::softwareRasterize()
 
       auto *pbrMat  = dynamic_cast<const PhysicallyBasedMaterial *>(surf->material());
       auto *matteMat = dynamic_cast<const MatteMaterial *>(surf->material());
+      if (surf->material() && surf->material()->slangOverride().active()) {
+        reportOnce(ANARI_SEVERITY_WARNING,
+            "WEBGPU_MATERIAL_SLANG overrides need the GPU path; software "
+            "rendering uses the default shading");
+      }
 
       for (uint32_t t = 0; t < numTris; t++) {
         uint32_t i0, i1, i2;
