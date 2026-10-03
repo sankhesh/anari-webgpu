@@ -6,7 +6,21 @@
 #include "Object.h"
 #include "sampler/Sampler.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace anari_webgpu {
+
+struct SlangOverride
+{
+  std::string source;
+  std::string materialType;
+  std::string lightingType;
+  std::vector<std::pair<std::string, helium::AnariAny>> parameters;
+
+  bool active() const { return !materialType.empty() || !lightingType.empty(); }
+};
 
 struct Material : public Object
 {
@@ -14,6 +28,14 @@ struct Material : public Object
   ~Material() override = default;
   static Material *createInstance(
       std::string_view subtype, WebGPUDeviceGlobalState *s);
+
+  const SlangOverride &slangOverride() const { return m_slangOverride; }
+
+ protected:
+  void commitSlangParameters();
+
+ private:
+  SlangOverride m_slangOverride;
 };
 
 enum class AlphaMode { OPAQUE, BLEND, MASK };

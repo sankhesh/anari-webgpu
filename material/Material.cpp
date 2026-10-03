@@ -19,6 +19,22 @@ Material *Material::createInstance(
   return (Material *)new UnknownObject(ANARI_MATERIAL, s);
 }
 
+void Material::commitSlangParameters()
+{
+  m_slangOverride.source = getParamString("slang.source", "");
+  m_slangOverride.materialType = getParamString("slang.material", "");
+  m_slangOverride.lightingType = getParamString("slang.lighting", "");
+  m_slangOverride.parameters.clear();
+  const std::string prefix = "slang.";
+  for (auto it = params_begin(); it != params_end(); ++it) {
+    const std::string &name = it->first;
+    if (name.compare(0, prefix.size(), prefix) != 0 || name == "slang.source"
+        || name == "slang.material" || name == "slang.lighting")
+      continue;
+    m_slangOverride.parameters.emplace_back(name.substr(prefix.size()), it->second);
+  }
+}
+
 // MatteMaterial //////////////////////////////////////////////////////////////
 
 MatteMaterial::MatteMaterial(WebGPUDeviceGlobalState *s) : Material(s) {}
@@ -40,6 +56,7 @@ void MatteMaterial::commitParameters()
     m_alphaMode = AlphaMode::OPAQUE;
 
   m_alphaCutoff = getParam<float>("alphaCutoff", 0.5f);
+  commitSlangParameters();
 }
 
 bool MatteMaterial::isValid() const
@@ -123,6 +140,7 @@ void PhysicallyBasedMaterial::commitParameters()
     m_alphaMode = AlphaMode::OPAQUE;
 
   m_alphaCutoff = getParam<float>("alphaCutoff", 0.5f);
+  commitSlangParameters();
 }
 
 bool PhysicallyBasedMaterial::isValid() const
