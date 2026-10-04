@@ -254,6 +254,39 @@ device, so the default shading needs no Slang at run time. After editing a
 shader, run the `anari_webgpu_update_wgsl` target and commit `generated/`; the
 `test_generated_wgsl_up_to_date` test fails while they differ.
 
+## Shading overrides (`WEBGPU_MATERIAL_SLANG`)
+
+On the GPU path, a `matte` or `physicallyBased` material can replace the
+shader's material and/or lighting model with Slang types implementing
+vtkSlang's `IMaterial` / `ILightingModel` (module `vtkslang_shading`). The
+material's own parameters keep feeding the defaults (`HostDrivenMaterial`).
+Fields of the override types are set as `slang.<path>` parameters:
+
+```cpp
+const char *module = R"(
+module my_materials;
+import vtkslang_shading;
+public struct Tinted : IMaterial {
+  float4 tint;
+  public MaterialSample evaluate(SurfaceSample s) {
+    MaterialSample m = HostDrivenMaterial().evaluate(s);
+    m.baseColor *= tint.rgb;
+    return m;
+  }
+};)";
+float tint[] = {1.f, 0.5f, 0.5f, 1.f};
+anariSetParameter(device, mat, "slang.source", ANARI_STRING, module);
+anariSetParameter(device, mat, "slang.material", ANARI_STRING, "Tinted");
+anariSetParameter(device, mat, "slang.material.tint", ANARI_FLOAT32_VEC4, tint);
+anariCommitParameters(device, mat);
+```
+
+Parameters must be plain data (scalars, vectors, `FLOAT32_MAT2/3/4`,
+column-major); fields without a value are zero. An override that fails to
+compile is reported once and the default shading is used. Overrides need
+runtime Slang and the GPU path; software rendering ignores them (with a
+warning).
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.

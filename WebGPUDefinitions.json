@@ -9,7 +9,8 @@
       "khr_material_matte",
       "khr_material_physically_based",
       "khr_geometry_spatial_field",
-      "khr_volume_transfer_function_1d"
+      "khr_volume_transfer_function_1d",
+      "webgpu_material_slang"
     ]
   },
   "objects": [

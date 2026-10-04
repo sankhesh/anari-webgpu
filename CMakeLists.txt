@@ -207,7 +207,9 @@ anari_generate_queries(
   CPP_NAMESPACE
   anari_webgpu
   JSON_DEFINITIONS_FILE
-  ${CMAKE_CURRENT_SOURCE_DIR}/WebGPUDefinitions.json)
+  ${CMAKE_CURRENT_SOURCE_DIR}/WebGPUDefinitions.json
+  JSON_ROOT_LOCATION
+  ${CMAKE_CURRENT_SOURCE_DIR}/extensions)
 
 # Install
 

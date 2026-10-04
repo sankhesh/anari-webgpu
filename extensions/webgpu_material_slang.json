@@ -1,0 +1,55 @@
+{
+    "info" : {
+        "name" : "WEBGPU_MATERIAL_SLANG",
+        "type" : "extension",
+        "dependencies" : []
+    },
+
+    "objects" : [
+        {
+            "type" : "ANARI_MATERIAL",
+            "name" : "matte",
+            "description" : "matte material object",
+            "parameters" : [
+                {
+                    "name" : "slang.source",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "Slang module defining the override types (imports vtkslang_shading)"
+                }, {
+                    "name" : "slang.material",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IMaterial; its fields are set as slang.material.<field>"
+                }, {
+                    "name" : "slang.lighting",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing ILightingModel; its fields are set as slang.lighting.<field>"
+                }
+            ]
+        }, {
+            "type" : "ANARI_MATERIAL",
+            "name" : "physicallyBased",
+            "description" : "physically based material object",
+            "parameters" : [
+                {
+                    "name" : "slang.source",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "Slang module defining the override types (imports vtkslang_shading)"
+                }, {
+                    "name" : "slang.material",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IMaterial; its fields are set as slang.material.<field>"
+                }, {
+                    "name" : "slang.lighting",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing ILightingModel; its fields are set as slang.lighting.<field>"
+                }
+            ]
+        }
+    ]
+}
