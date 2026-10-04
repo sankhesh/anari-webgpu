@@ -27,6 +27,15 @@ foreach(test_src ${TEST_SOURCES})
   )
 endforeach()
 
+add_executable(test_slang_material test_slang_material.cpp)
+target_link_libraries(test_slang_material PRIVATE anari::anari)
+target_compile_features(test_slang_material PRIVATE cxx_std_17)
+add_test(NAME test_slang_material COMMAND test_slang_material)
+set_tests_properties(test_slang_material PROPERTIES
+  ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}"
+  SKIP_RETURN_CODE 77
+)
+
 add_executable(test_shaders test_shaders.cpp)
 target_link_libraries(test_shaders PRIVATE anari_webgpu_shaders)
 target_compile_features(test_shaders PRIVATE cxx_std_17)
