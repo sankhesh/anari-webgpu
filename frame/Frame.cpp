@@ -293,7 +293,8 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
     const SlangOverride &o)
 {
   std::string key = std::string(shader) + '\0' + o.source + '\0' + o.materialType
-      + '\0' + o.lightingType;
+      + '\0' + o.lightingType + '\0' + o.normalType + '\0' + o.outputType + '\0'
+      + o.vertexType;
   auto it = m_slangPipelines.find(key);
   if (it != m_slangPipelines.end())
     return it->second.valid ? &it->second : nullptr;
@@ -306,6 +307,12 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
     options.specializations.emplace_back("IMaterial", o.materialType);
   if (!o.lightingType.empty())
     options.specializations.emplace_back("ILightingModel", o.lightingType);
+  if (!o.normalType.empty())
+    options.specializations.emplace_back("INormalModifier", o.normalType);
+  if (!o.outputType.empty())
+    options.specializations.emplace_back("ISurfaceOutput", o.outputType);
+  if (!o.vertexType.empty())
+    options.specializations.emplace_back("IVertexModifier", o.vertexType);
   vtkslang::Artifact artifact =
       m_slangCompiler.compileProgram(shaderProgram(shader), options);
   if (!artifact) {

@@ -17,9 +17,16 @@ struct SlangOverride
   std::string source;
   std::string materialType;
   std::string lightingType;
+  std::string normalType;
+  std::string outputType;
+  std::string vertexType;
   std::vector<std::pair<std::string, helium::AnariAny>> parameters;
 
-  bool active() const { return !materialType.empty() || !lightingType.empty(); }
+  bool active() const
+  {
+    return !materialType.empty() || !lightingType.empty() || !normalType.empty()
+        || !outputType.empty() || !vertexType.empty();
+  }
 };
 
 struct Material : public Object

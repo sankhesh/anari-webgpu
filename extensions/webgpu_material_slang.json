@@ -26,6 +26,21 @@
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
                     "description" : "type implementing ILightingModel; its fields are set as slang.lighting.<field>"
+                }, {
+                    "name" : "slang.normal",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing INormalModifier; its fields are set as slang.normal.<field>"
+                }, {
+                    "name" : "slang.output",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing ISurfaceOutput; its fields are set as slang.output.<field>"
+                }, {
+                    "name" : "slang.vertex",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IVertexModifier; its fields are set as slang.vertex.<field>"
                 }
             ]
         }, {
@@ -48,6 +63,21 @@
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
                     "description" : "type implementing ILightingModel; its fields are set as slang.lighting.<field>"
+                }, {
+                    "name" : "slang.normal",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing INormalModifier; its fields are set as slang.normal.<field>"
+                }, {
+                    "name" : "slang.output",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing ISurfaceOutput; its fields are set as slang.output.<field>"
+                }, {
+                    "name" : "slang.vertex",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IVertexModifier; its fields are set as slang.vertex.<field>"
                 }
             ]
         }

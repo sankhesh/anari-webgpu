@@ -256,9 +256,12 @@ shader, run the `anari_webgpu_update_wgsl` target and commit `generated/`; the
 
 ## Shading overrides (`WEBGPU_MATERIAL_SLANG`)
 
-On the GPU path, a `matte` or `physicallyBased` material can replace the
-shader's material and/or lighting model with Slang types implementing
-vtkSlang's `IMaterial` / `ILightingModel` (module `vtkslang_shading`). The
+On the GPU path, a `matte` or `physicallyBased` material can replace parts
+of the shader with Slang types implementing vtkSlang's interfaces (module
+`vtkslang_shading`): `slang.material` (`IMaterial`), `slang.lighting`
+(`ILightingModel`), `slang.normal` (`INormalModifier`), `slang.output`
+(`ISurfaceOutput`: discard, final color, depth) and `slang.vertex`
+(`IVertexModifier`: vertex displacement). The
 material's own parameters keep feeding the defaults (`HostDrivenMaterial`).
 Fields of the override types are set as `slang.<path>` parameters:
 
