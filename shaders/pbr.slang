@@ -6,14 +6,14 @@ import vtkslang_shading;
 
 type_param M : IMaterial;
 type_param L : ILightingModel;
-typealias Default_IMaterial      = HostDrivenMaterial;
-typealias Default_ILightingModel = CookTorranceLighting;
-
-struct Shading<TM : IMaterial, TL : ILightingModel>
-{
-    TM material;
-    TL lighting;
-};
+type_param N : INormalModifier;
+type_param O : ISurfaceOutput;
+type_param V : IVertexModifier;
+typealias Default_IMaterial       = HostDrivenMaterial;
+typealias Default_ILightingModel  = CookTorranceLighting;
+typealias Default_INormalModifier = GeometricNormal;
+typealias Default_ISurfaceOutput  = StandardOutput;
+typealias Default_IVertexModifier = IdentityVertex;
 
 struct PBRUniforms
 {
@@ -42,7 +42,7 @@ struct PBRUniforms
 [vk::binding(4, 0)] StructuredBuffer<float>        normals;
 [vk::binding(5, 0)] StructuredBuffer<float>        colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>         indices;
-ParameterBlock<Shading<M, L>>                      shading;
+ParameterBlock<Shading<M, L, N, O, V>>             shading;
 
 float3 pbr_getPos(uint i)   { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 pbr_getNorm(uint i)  { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
@@ -53,6 +53,59 @@ uint3 pbr_triangleIndices(uint triIdx)
     return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
 }
 
+VertexSample pbr_fetchVertex(uint triIdx, uint idx)
+{
+    VertexSample v = VertexSample();
+    v.position    = pbr_getPos(idx);
+    if (params.hasNormals != 0u)
+        v.normal  = pbr_getNorm(idx);
+    if (params.hasColors != 0u)
+        v.color   = pbr_getColor(idx);
+    v.pointId     = idx;
+    v.cellId      = triIdx;
+    v.primitiveId = triIdx;
+    v.modelToClip = params.mvp;
+    return shading.vertex.modify(v);
+}
+
+struct PBRTriangle
+{
+    VertexSample   v0, v1, v2;
+    ScreenTriangle t;
+    uint           id;
+};
+
+bool pbr_setupTriangle(uint triIdx, out PBRTriangle r)
+{
+    r = PBRTriangle();
+    r.id = triIdx;
+    uint3 i = pbr_triangleIndices(triIdx);
+    r.v0 = pbr_fetchVertex(triIdx, i.x);
+    r.v1 = pbr_fetchVertex(triIdx, i.y);
+    r.v2 = pbr_fetchVertex(triIdx, i.z);
+    return setupScreenTriangle(params.mvp, r.v0.position, r.v1.position, r.v2.position,
+                               params.width, params.height, r.t);
+}
+
+SurfaceSample pbr_surfaceSample(PBRTriangle r, float3 w, int px, int py, float depth)
+{
+    SurfaceSample s = SurfaceSample();
+    s.position = r.v0.position*w.x + r.v1.position*w.y + r.v2.position*w.z;
+    if (params.hasNormals != 0u)
+        s.normal = normalize(r.v0.normal*w.x + r.v1.normal*w.y + r.v2.normal*w.z);
+    else
+        s.normal = normalize(cross(r.v1.position - r.v0.position, r.v2.position - r.v0.position));
+    float3 ndcC   = r.t.ndc0*w.x + r.t.ndc1*w.y + r.t.ndc2*w.z;
+    s.viewDir     = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
+    s.uv          = r.v0.uv*w.x + r.v1.uv*w.y + r.v2.uv*w.z;
+    s.fragCoord   = float4(float(px) + 0.5f, float(py) + 0.5f, depth, 1.f);
+    s.primitiveId = r.id;
+    s.cellId      = r.id;
+    s.frontFacing = r.t.area < 0.f;
+    s.camera.shadingToClip = params.mvp;
+    return s;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
@@ -61,19 +114,21 @@ void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
     if (triIdx >= params.numTriangles)
         return;
 
-    uint3 i = pbr_triangleIndices(triIdx);
-    ScreenTriangle t;
-    if (!setupScreenTriangle(params.mvp, pbr_getPos(i.x), pbr_getPos(i.y),
-                             pbr_getPos(i.z), params.width, params.height, t))
+    PBRTriangle r;
+    if (!pbr_setupTriangle(triIdx, r))
         return;
 
-    for (int py = int(t.minY); py <= int(t.maxY); py++) {
-        for (int px = int(t.minX); px <= int(t.maxX); px++) {
-            float3 w = barycentric(t, px, py);
+    for (int py = int(r.t.minY); py <= int(r.t.maxY); py++) {
+        for (int px = int(r.t.minX); px <= int(r.t.maxX); px++) {
+            float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
+            float         z = interpolateDepth(r.t, w);
+            SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
+            if (!shading.output.keep(s))
+                continue;
             uint pixIdx = uint(py)*params.width + uint(px);
-            depthBufI[pixIdx].min(depthToU32(interpolateDepth(t, w)));
+            depthBufI[pixIdx].min(depthToU32(shading.output.depth(z, s)));
         }
     }
 }
@@ -86,58 +141,41 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
     if (triIdx >= params.numTriangles)
         return;
 
-    uint3  i  = pbr_triangleIndices(triIdx);
-    uint   i0 = i.x;
-    uint   i1 = i.y;
-    uint   i2 = i.z;
-    float3 p0 = pbr_getPos(i0);
-    float3 p1 = pbr_getPos(i1);
-    float3 p2 = pbr_getPos(i2);
-
-    ScreenTriangle t;
-    if (!setupScreenTriangle(params.mvp, p0, p1, p2, params.width, params.height, t))
+    PBRTriangle r;
+    if (!pbr_setupTriangle(triIdx, r))
         return;
 
-    LightSample light;
+    LightSample light = LightSample();
     light.direction = normalize(-params.lightDir);
     light.radiance  = params.lightIrradiance * params.lightColor;
 
-    for (int py = int(t.minY); py <= int(t.maxY); py++) {
-        for (int px = int(t.minX); px <= int(t.maxX); px++) {
-            float3 w = barycentric(t, px, py);
+    for (int py = int(r.t.minY); py <= int(r.t.maxY); py++) {
+        for (int px = int(r.t.minX); px <= int(r.t.maxX); px++) {
+            float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
-            float w0 = w.x;
-            float w1 = w.y;
-            float w2 = w.z;
 
+            float         z = interpolateDepth(r.t, w);
+            SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
+            if (!shading.output.keep(s))
+                continue;
             uint pixIdx = uint(py)*params.width + uint(px);
-            uint dU     = depthToU32(interpolateDepth(t, w));
+            uint dU     = depthToU32(shading.output.depth(z, s));
             if (dU > depthBufI[pixIdx].load() + kDepthTolerance)
                 continue;
 
-            float3 N;
-            if (params.hasNormals != 0u)
-                N = normalize(pbr_getNorm(i0)*w0 + pbr_getNorm(i1)*w1 + pbr_getNorm(i2)*w2);
-            else
-                N = normalize(cross(p1-p0, p2-p0));
-
             float3 baseRGB = params.baseColor.rgb;
             if (params.hasColors != 0u) {
-                float4 vc = pbr_getColor(i0)*w0 + pbr_getColor(i1)*w1 + pbr_getColor(i2)*w2;
+                float4 vc = r.v0.color*w.x + r.v1.color*w.y + r.v2.color*w.z;
                 baseRGB = baseRGB * vc.rgb;
             }
 
-            SurfaceSample s;
-            s.position = p0*w0 + p1*w1 + p2*w2;
-            s.normal   = N;
-            float3 ndcC = t.ndc0*w0 + t.ndc1*w1 + t.ndc2*w2;
-            s.viewDir  = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
             s.host.baseColor = baseRGB;
             s.host.opacity   = params.baseColor.a;
             s.host.metallic  = params.metallicRoughness.x;
             s.host.roughness = params.metallicRoughness.y;
             s.host.emissive  = params.emissive.xyz * params.emissive.w;
+            s.normal         = shading.normal.normal(s);
 
             MaterialSample m = shading.material.evaluate(s);
             float3 radiance  = shading.lighting.ambient(m, s, float3(params.ambientRadiance))
@@ -155,7 +193,7 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
                 fragAlpha = 1.f;
             }
 
-            colorBuf[pixIdx] = float4(Lo, fragAlpha);
+            colorBuf[pixIdx] = shading.output.finish(float4(Lo, fragAlpha), m, s);
         }
     }
 }
