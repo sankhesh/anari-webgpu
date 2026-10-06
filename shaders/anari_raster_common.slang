@@ -30,13 +30,10 @@ public struct ScreenTriangle
     public float  maxY = 0.f;
 };
 
-public bool setupScreenTriangle(float4x4 mvp, float3 p0, float3 p1, float3 p2,
-                                uint width, uint height, out ScreenTriangle t)
+public bool setupScreenTriangleClip(float4 c0, float4 c1, float4 c2,
+                                    uint width, uint height, out ScreenTriangle t)
 {
     t = ScreenTriangle();
-    float4 c0 = mul(mvp, float4(p0, 1.f));
-    float4 c1 = mul(mvp, float4(p1, 1.f));
-    float4 c2 = mul(mvp, float4(p2, 1.f));
     if (c0.w <= 0.f || c1.w <= 0.f || c2.w <= 0.f)
         return false;
 

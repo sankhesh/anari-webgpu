@@ -3,17 +3,20 @@
 
 import anari_raster_common;
 import vtkslang_shading;
+import vtkslang_hooks;
 
 type_param M : IMaterial;
 type_param L : ILightingModel;
 type_param N : INormalModifier;
 type_param O : ISurfaceOutput;
 type_param V : IVertexModifier;
+type_param H : IShaderHooks;
 typealias Default_IMaterial       = HostDrivenMaterial;
 typealias Default_ILightingModel  = CookTorranceLighting;
 typealias Default_INormalModifier = GeometricNormal;
 typealias Default_ISurfaceOutput  = StandardOutput;
 typealias Default_IVertexModifier = IdentityVertex;
+typealias Default_IShaderHooks    = DefaultHooks;
 
 struct PBRUniforms
 {
@@ -43,6 +46,7 @@ struct PBRUniforms
 [vk::binding(5, 0)] StructuredBuffer<float>        colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>         indices;
 ParameterBlock<Shading<M, L, N, O, V>>             shading;
+ParameterBlock<HookBlock<H>>                       hookBlock;
 
 float3 pbr_getPos(uint i)   { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 pbr_getNorm(uint i)  { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
@@ -51,6 +55,21 @@ float4 pbr_getColor(uint i) { return float4(colors[i*4u],    colors[i*4u+1u],   
 uint3 pbr_triangleIndices(uint triIdx)
 {
     return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
+}
+
+VertexContext pbr_vertexContext(VertexSample v)
+{
+    VertexContext c = VertexContext();
+    c.positionMC  = float4(v.position, 1.f);
+    c.normalMC    = v.normal;
+    c.tangentMC   = v.tangent;
+    c.uv          = v.uv;
+    c.color       = v.color;
+    c.pointId     = v.pointId;
+    c.cellId      = v.cellId;
+    c.primitiveId = v.primitiveId;
+    c.modelToClip = params.mvp;
+    return c;
 }
 
 VertexSample pbr_fetchVertex(uint triIdx, uint idx)
@@ -65,7 +84,23 @@ VertexSample pbr_fetchVertex(uint triIdx, uint idx)
     v.cellId      = triIdx;
     v.primitiveId = triIdx;
     v.modelToClip = params.mvp;
-    return shading.vertex.modify(v);
+    v = shading.vertex.modify(v);
+    VertexContext c = pbr_vertexContext(v);
+    hookBlock.hooks.vertex(c);
+    v.position = c.positionMC.xyz;
+    v.normal   = c.normalMC;
+    v.tangent  = c.tangentMC;
+    v.uv       = c.uv;
+    v.color    = c.color;
+    return v;
+}
+
+float4 pbr_project(VertexSample v)
+{
+    VertexContext c = pbr_vertexContext(v);
+    c.positionClip  = mul(params.mvp, c.positionMC);
+    hookBlock.hooks.position(c);
+    return c.positionClip;
 }
 
 struct PBRTriangle
@@ -83,8 +118,8 @@ bool pbr_setupTriangle(uint triIdx, out PBRTriangle r)
     r.v0 = pbr_fetchVertex(triIdx, i.x);
     r.v1 = pbr_fetchVertex(triIdx, i.y);
     r.v2 = pbr_fetchVertex(triIdx, i.z);
-    return setupScreenTriangle(params.mvp, r.v0.position, r.v1.position, r.v2.position,
-                               params.width, params.height, r.t);
+    return setupScreenTriangleClip(pbr_project(r.v0), pbr_project(r.v1), pbr_project(r.v2),
+                                   params.width, params.height, r.t);
 }
 
 SurfaceSample pbr_surfaceSample(PBRTriangle r, float3 w, int px, int py, float depth)
@@ -106,6 +141,33 @@ SurfaceSample pbr_surfaceSample(PBRTriangle r, float3 w, int px, int py, float d
     return s;
 }
 
+FragmentContext pbr_fragmentContext(SurfaceSample s)
+{
+    FragmentContext f = FragmentContext();
+    f.positionVC  = float4(s.position, 1.f);
+    f.normalVC    = s.normal;
+    f.tangentVC   = s.tangent;
+    f.uv          = s.uv;
+    f.fragCoord   = s.fragCoord;
+    f.primitiveId = s.primitiveId;
+    f.cellId      = s.cellId;
+    f.frontFacing = s.frontFacing;
+    f.depth       = s.fragCoord.z;
+    return f;
+}
+
+bool pbr_fragmentDepth(SurfaceSample s, float z, out float depth)
+{
+    FragmentContext f = pbr_fragmentContext(s);
+    depth = z;
+    if (!hookBlock.hooks.clip(f) || !shading.output.keep(s))
+        return false;
+    f.depth = shading.output.depth(z, s);
+    hookBlock.hooks.output(f);
+    depth = f.depth;
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
@@ -125,10 +187,11 @@ void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
                 continue;
             float         z = interpolateDepth(r.t, w);
             SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
-            if (!shading.output.keep(s))
+            float         depth;
+            if (!pbr_fragmentDepth(s, z, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
-            depthBufI[pixIdx].min(depthToU32(shading.output.depth(z, s)));
+            depthBufI[pixIdx].min(depthToU32(depth));
         }
     }
 }
@@ -157,11 +220,11 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
 
             float         z = interpolateDepth(r.t, w);
             SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
-            if (!shading.output.keep(s))
+            float         depth;
+            if (!pbr_fragmentDepth(s, z, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
-            uint dU     = depthToU32(shading.output.depth(z, s));
-            if (dU > depthBufI[pixIdx].load() + kDepthTolerance)
+            if (depthToU32(depth) > depthBufI[pixIdx].load() + kDepthTolerance)
                 continue;
 
             float3 baseRGB = params.baseColor.rgb;
@@ -170,11 +233,17 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
                 baseRGB = baseRGB * vc.rgb;
             }
 
-            s.host.baseColor = baseRGB;
-            s.host.opacity   = params.baseColor.a;
+            FragmentContext f = pbr_fragmentContext(s);
+            f.diffuseColor = baseRGB;
+            f.opacity      = params.baseColor.a;
+            hookBlock.hooks.color(f);
+            hookBlock.hooks.normal(f);
+            s.host.baseColor = f.diffuseColor;
+            s.host.opacity   = f.opacity;
             s.host.metallic  = params.metallicRoughness.x;
             s.host.roughness = params.metallicRoughness.y;
             s.host.emissive  = params.emissive.xyz * params.emissive.w;
+            s.normal         = f.normalVC;
             s.normal         = shading.normal.normal(s);
 
             MaterialSample m = shading.material.evaluate(s);
@@ -193,7 +262,12 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
                 fragAlpha = 1.f;
             }
 
-            colorBuf[pixIdx] = shading.output.finish(float4(Lo, fragAlpha), m, s);
+            f.color = float4(Lo, fragAlpha);
+            hookBlock.hooks.lit(f);
+            f.color = shading.output.finish(f.color, m, s);
+            f.depth = depth;
+            hookBlock.hooks.output(f);
+            colorBuf[pixIdx] = f.color;
         }
     }
 }

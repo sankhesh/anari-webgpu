@@ -237,6 +237,49 @@ public struct ToonLighting : ILightingModel {
       "the library's PhongLighting can replace a shader's default");
 }
 
+static void testHooks(vtkslang::vtkSlangCompiler &compiler)
+{
+  const char *hooks = R"(
+module builtin_hooks;
+import vtkslang_hooks;
+import vtkslang_shading;
+public struct Fade : IShaderHooks {
+  float amount;
+  public override void lit(inout FragmentContext f) { f.color.rgb *= amount; }
+};
+public struct Tint : IMaterial {
+  float3 tint;
+  public MaterialSample evaluate(SurfaceSample s) {
+    MaterialSample m = HostDrivenMaterial().evaluate(s);
+    m.baseColor *= tint;
+    return m;
+  }
+};
+)";
+  for (const char *shader : {"raster", "pbr"}) {
+    const vtkslang::Program program = anari_webgpu::shaderProgram(shader);
+    vtkslang::CompileOptions hooksOnly;
+    hooksOnly.modules = {hooks};
+    hooksOnly.specializations = {{"IShaderHooks", "Fade"}};
+    vtkslang::Artifact a = compiler.compileProgram(program, hooksOnly);
+    const auto *h = byName(a, "hookBlock");
+
+    vtkslang::CompileOptions both = hooksOnly;
+    both.specializations.push_back({"IMaterial", "Tint"});
+    vtkslang::Artifact b = compiler.compileProgram(program, both);
+    const auto *s = byName(b, "shading");
+    const auto *g = byName(b, "hookBlock");
+    check(a && h && h->kind == BindingKind::UniformBuffer
+            && field(h, "hooks.amount") && b && s && g && s->group == 1
+            && g->group == 2 && field(s, "material.tint")
+            && reflectedBindings(b) == wgslBindings(b.wgsl),
+        std::string(shader)
+            + " offers the shader hooks; their block follows the shading block");
+    if (!a)
+      std::printf("%s", a.diagnostics.c_str());
+  }
+}
+
 int main()
 {
   vtkslang::vtkSlangCompiler compiler;
@@ -244,6 +287,7 @@ int main()
   if (vtkslang::vtkSlangCompiler::slangAvailable()) {
     testRuntimeMatchesBuildTime(compiler);
     testOverrides(compiler);
+    testHooks(compiler);
   } else {
     std::printf("SKIP: Slang unavailable\n");
   }
