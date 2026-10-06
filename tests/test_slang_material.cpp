@@ -30,6 +30,23 @@ public struct Tinted : IMaterial {
     return m;
   }
 };
+public struct Invert : ISurfaceOutput {
+  public bool keep(SurfaceSample s) { return true; }
+  public float4 finish(float4 c, MaterialSample m, SurfaceSample s) { return float4(1.f - c.rgb, c.a); }
+  public float depth(float d, SurfaceSample s) { return d; }
+};
+public struct Erase : ISurfaceOutput {
+  public bool keep(SurfaceSample s) { return false; }
+  public float4 finish(float4 c, MaterialSample m, SurfaceSample s) { return c; }
+  public float depth(float d, SurfaceSample s) { return d; }
+};
+public struct Shift : IVertexModifier {
+  float offset;
+  public VertexSample modify(VertexSample v) {
+    v.position.x += offset;
+    return v;
+  }
+};
 )";
 
 static constexpr int kSize = 64;
@@ -183,6 +200,37 @@ int main()
   render(s, rgb);
   if (dominant(rgb) != 2)
     return fail("the colorMatrix parameter was not applied as columns (expected blue)", rgb);
+  printf(" PASSED\n");
+
+  printf("  surface output (finish, keep)...");
+  anariSetParameter(s.device, s.material, "slang.output", ANARI_STRING, "Invert");
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (!(rgb[0] > 100 && rgb[1] > 100 && rgb[2] < rgb[0] / 3))
+    return fail("ISurfaceOutput::finish was not applied (expected yellow)", rgb);
+  anariSetParameter(s.device, s.material, "slang.output", ANARI_STRING, "Erase");
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (rgb[0] + rgb[1] + rgb[2] != 0)
+    return fail("ISurfaceOutput::keep did not discard (expected the background)", rgb);
+  anariUnsetParameter(s.device, s.material, "slang.output");
+  printf(" PASSED\n");
+
+  printf("  vertex modifier...");
+  float away = 10.f, none = 0.f;
+  anariSetParameter(s.device, s.material, "slang.vertex", ANARI_STRING, "Shift");
+  anariSetParameter(s.device, s.material, "slang.vertex.offset", ANARI_FLOAT32, &away);
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (rgb[0] + rgb[1] + rgb[2] != 0)
+    return fail("IVertexModifier did not move the triangle away (expected the background)", rgb);
+  anariSetParameter(s.device, s.material, "slang.vertex.offset", ANARI_FLOAT32, &none);
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (dominant(rgb) != 2)
+    return fail("IVertexModifier with no offset changed the image (expected blue)", rgb);
+  anariUnsetParameter(s.device, s.material, "slang.vertex");
+  anariUnsetParameter(s.device, s.material, "slang.vertex.offset");
   printf(" PASSED\n");
 
   printf("  broken override...");
