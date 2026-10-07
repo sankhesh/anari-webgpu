@@ -61,15 +61,26 @@ struct Frame : public helium::BaseFrame
   void cleanupComputeResources();
   WGPUShaderModule createBuiltinShader(WGPUDevice device, const char *name);
 
+  struct SlangBlock
+  {
+    uint32_t group{0};
+    WGPUBindGroupLayout layout{nullptr};
+    uint64_t size{0};
+    std::vector<vtkslang::UniformField> fields;
+  };
   struct SlangPipelines
   {
     bool valid{false};
     WGPUShaderModule shader{nullptr};
     WGPUComputePipeline color{nullptr};
     WGPUComputePipeline depth{nullptr};
-    WGPUBindGroupLayout parametersBGL{nullptr};
-    uint64_t parametersSize{0};
-    std::vector<vtkslang::UniformField> fields;
+    std::vector<SlangBlock> blocks;
+    std::vector<WGPUBindGroupLayout> emptyLayouts;
+  };
+  struct SlangBindGroups
+  {
+    std::vector<std::pair<uint32_t, WGPUBindGroup>> groups;
+    std::vector<WGPUBuffer> buffers;
   };
   const SlangPipelines *slangPipelines(WGPUDevice device,
       const char *shader,
@@ -78,7 +89,11 @@ struct Frame : public helium::BaseFrame
       const char *depthEntryPoint,
       const SlangOverride &slangOverride);
   std::vector<uint8_t> packSlangParameters(
-      const SlangPipelines &p, const SlangOverride &slangOverride);
+      const SlangBlock &block, const SlangOverride &slangOverride);
+  SlangBindGroups makeSlangBindGroups(WGPUDevice device,
+      WGPUQueue queue,
+      const SlangPipelines *p,
+      const SlangOverride &slangOverride);
   void reportOnce(ANARIStatusSeverity severity, const std::string &message);
   void writeSample(int x, int y, const PixelSample &s);
 

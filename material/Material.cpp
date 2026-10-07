@@ -27,6 +27,7 @@ void Material::commitSlangParameters()
   m_slangOverride.normalType = getParamString("slang.normal", "");
   m_slangOverride.outputType = getParamString("slang.output", "");
   m_slangOverride.vertexType = getParamString("slang.vertex", "");
+  m_slangOverride.hooksType = getParamString("slang.hooks", "");
   m_slangOverride.parameters.clear();
   const std::string prefix = "slang.";
   for (auto it = params_begin(); it != params_end(); ++it) {
@@ -34,7 +35,7 @@ void Material::commitSlangParameters()
     if (name.compare(0, prefix.size(), prefix) != 0 || name == "slang.source"
         || name == "slang.material" || name == "slang.lighting"
         || name == "slang.normal" || name == "slang.output"
-        || name == "slang.vertex")
+        || name == "slang.vertex" || name == "slang.hooks")
       continue;
     m_slangOverride.parameters.emplace_back(name.substr(prefix.size()), it->second);
   }

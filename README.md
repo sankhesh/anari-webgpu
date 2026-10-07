@@ -261,8 +261,10 @@ On the GPU path, a `matte` or `physicallyBased` material can replace parts
 of the shader with Slang types implementing vtkSlang's interfaces (module
 `vtkslang_shading`): `slang.material` (`IMaterial`), `slang.lighting`
 (`ILightingModel`), `slang.normal` (`INormalModifier`), `slang.output`
-(`ISurfaceOutput`: discard, final color, depth) and `slang.vertex`
-(`IVertexModifier`: vertex displacement). The
+(`ISurfaceOutput`: discard, final color, depth), `slang.vertex`
+(`IVertexModifier`: vertex displacement) and `slang.hooks` (`IShaderHooks`
+from `vtkslang_hooks`: typed insertion points in the vertex and fragment
+stages). The
 material's own parameters keep feeding the defaults (`HostDrivenMaterial`).
 Fields of the override types are set as `slang.<path>` parameters:
 

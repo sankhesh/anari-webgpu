@@ -41,6 +41,11 @@
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
                     "description" : "type implementing IVertexModifier; its fields are set as slang.vertex.<field>"
+                }, {
+                    "name" : "slang.hooks",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IShaderHooks; its fields are set as slang.hooks.<field>"
                 }
             ]
         }, {
@@ -78,6 +83,11 @@
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
                     "description" : "type implementing IVertexModifier; its fields are set as slang.vertex.<field>"
+                }, {
+                    "name" : "slang.hooks",
+                    "types" : ["ANARI_STRING"],
+                    "tags" : [],
+                    "description" : "type implementing IShaderHooks; its fields are set as slang.hooks.<field>"
                 }
             ]
         }

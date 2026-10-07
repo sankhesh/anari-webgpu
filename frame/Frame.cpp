@@ -104,6 +104,35 @@ static WGPUBindGroupLayout makeBGL(WGPUDevice device,
   return wgpuDeviceCreateBindGroupLayout(device, &desc);
 }
 
+static WGPUBuffer uploadUniform(WGPUDevice device, WGPUQueue queue,
+    const void *data, uint64_t size)
+{
+  WGPUBufferDescriptor desc{};
+  desc.nextInChain = nullptr;
+  desc.size = size;
+  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  desc.mappedAtCreation = false;
+  WGPUBuffer buf = wgpuDeviceCreateBuffer(device, &desc);
+  wgpuQueueWriteBuffer(queue, buf, 0, data, size);
+  return buf;
+}
+
+static WGPUBindGroup makeBindGroup1(
+    WGPUDevice device, WGPUBindGroupLayout bgl, WGPUBuffer buffer, uint64_t size)
+{
+  WGPUBindGroupEntry e{};
+  e.binding = 0;
+  e.buffer = buffer;
+  e.offset = 0;
+  e.size = size;
+  WGPUBindGroupDescriptor bgDesc{};
+  bgDesc.nextInChain = nullptr;
+  bgDesc.layout = bgl;
+  bgDesc.entryCount = 1;
+  bgDesc.entries = &e;
+  return wgpuDeviceCreateBindGroup(device, &bgDesc);
+}
+
 static WGPUComputePipeline makePipeline(WGPUDevice device,
     WGPUShaderModule shader, const WGPUBindGroupLayout *bgls, uint32_t bglCount,
     const char *label, const char *entryPoint)
@@ -132,6 +161,7 @@ static WGPUComputePipeline makePipeline(WGPUDevice device,
 {
   return makePipeline(device, shader, &bgl, 1, label, entryPoint);
 }
+
 
 static WGPUBindGroupLayoutEntry storageEntry(uint32_t binding, bool readOnly)
 {
@@ -294,7 +324,7 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
 {
   std::string key = std::string(shader) + '\0' + o.source + '\0' + o.materialType
       + '\0' + o.lightingType + '\0' + o.normalType + '\0' + o.outputType + '\0'
-      + o.vertexType;
+      + o.vertexType + '\0' + o.hooksType;
   auto it = m_slangPipelines.find(key);
   if (it != m_slangPipelines.end())
     return it->second.valid ? &it->second : nullptr;
@@ -313,6 +343,8 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
     options.specializations.emplace_back("ISurfaceOutput", o.outputType);
   if (!o.vertexType.empty())
     options.specializations.emplace_back("IVertexModifier", o.vertexType);
+  if (!o.hooksType.empty())
+    options.specializations.emplace_back("IShaderHooks", o.hooksType);
   vtkslang::Artifact artifact =
       m_slangCompiler.compileProgram(shaderProgram(shader), options);
   if (!artifact) {
@@ -326,10 +358,12 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
   for (const auto &b : artifact.bindings) {
     if (b.group == 0)
       continue;
-    if (b.group == 1 && b.binding == 0
-        && b.kind == vtkslang::BindingKind::UniformBuffer) {
-      p.parametersSize = b.sizeBytes;
-      p.fields = b.fields;
+    if (b.binding == 0 && b.kind == vtkslang::BindingKind::UniformBuffer) {
+      SlangBlock block;
+      block.group = b.group;
+      block.size = b.sizeBytes;
+      block.fields = b.fields;
+      p.blocks.push_back(std::move(block));
       continue;
     }
     reportOnce(ANARI_SEVERITY_ERROR,
@@ -342,27 +376,83 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
   p.shader = vtkslang::createShaderModule(device, artifact, label.c_str());
   if (!p.shader)
     return nullptr;
-  WGPUBindGroupLayout bgls[2] = {group0, nullptr};
-  uint32_t bglCount = 1;
-  if (p.parametersSize > 0) {
+  uint32_t groupCount = 1;
+  for (const SlangBlock &block : p.blocks)
+    groupCount = std::max(groupCount, block.group + 1);
+  std::vector<WGPUBindGroupLayout> bgls(groupCount, nullptr);
+  bgls[0] = group0;
+  for (SlangBlock &block : p.blocks) {
     WGPUBindGroupLayoutEntry entry = uniformEntry(0);
-    entry.buffer.minBindingSize = p.parametersSize;
-    p.parametersBGL = makeBGL(device, &entry, 1);
-    bgls[1] = p.parametersBGL;
-    bglCount = 2;
+    entry.buffer.minBindingSize = block.size;
+    block.layout = makeBGL(device, &entry, 1);
+    bgls[block.group] = block.layout;
+  }
+  for (uint32_t g = 1; g < groupCount; ++g) {
+    if (!bgls[g]) {
+      p.emptyLayouts.push_back(makeBGL(device, nullptr, 0));
+      bgls[g] = p.emptyLayouts.back();
+    }
   }
   p.color = makePipeline(
-      device, p.shader, bgls, bglCount, label.c_str(), colorEntryPoint);
+      device, p.shader, bgls.data(), groupCount, label.c_str(), colorEntryPoint);
   p.depth = makePipeline(
-      device, p.shader, bgls, bglCount, label.c_str(), depthEntryPoint);
+      device, p.shader, bgls.data(), groupCount, label.c_str(), depthEntryPoint);
   p.valid = p.color && p.depth;
   return p.valid ? &p : nullptr;
 }
 
-std::vector<uint8_t> Frame::packSlangParameters(
-    const SlangPipelines &p, const SlangOverride &o)
+Frame::SlangBindGroups Frame::makeSlangBindGroups(WGPUDevice device,
+    WGPUQueue queue,
+    const SlangPipelines *p,
+    const SlangOverride &o)
 {
-  std::vector<uint8_t> data((p.parametersSize + 15) & ~uint64_t(15), 0);
+  SlangBindGroups result;
+  if (!p)
+    return result;
+  for (const auto &parameter : o.parameters) {
+    bool found = false;
+    for (const SlangBlock &block : p->blocks)
+      for (const auto &f : block.fields)
+        found |= f.name == parameter.first;
+    if (!found)
+      reportOnce(ANARI_SEVERITY_WARNING,
+          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + parameter.first
+              + "' does not match a field of the override types");
+  }
+  for (uint32_t g = 1;; ++g) {
+    const SlangBlock *block = nullptr;
+    for (const SlangBlock &b : p->blocks)
+      block = b.group == g ? &b : block;
+    bool any = false;
+    for (const SlangBlock &b : p->blocks)
+      any |= b.group >= g;
+    if (!any)
+      break;
+    if (block) {
+      std::vector<uint8_t> values = packSlangParameters(*block, o);
+      WGPUBuffer buffer = uploadUniform(device, queue, values.data(), values.size());
+      result.buffers.push_back(buffer);
+      result.groups.emplace_back(g, makeBindGroup1(device, block->layout, buffer, values.size()));
+    } else {
+      size_t emptyIndex = 0;
+      for (uint32_t h = 1; h < g; ++h) {
+        bool has = false;
+        for (const SlangBlock &b : p->blocks)
+          has |= b.group == h;
+        emptyIndex += has ? 0 : 1;
+      }
+      WGPUBindGroupDescriptor desc{};
+      desc.layout = p->emptyLayouts[emptyIndex];
+      result.groups.emplace_back(g, wgpuDeviceCreateBindGroup(device, &desc));
+    }
+  }
+  return result;
+}
+
+std::vector<uint8_t> Frame::packSlangParameters(
+    const SlangBlock &p, const SlangOverride &o)
+{
+  std::vector<uint8_t> data((p.size + 15) & ~uint64_t(15), 0);
   for (const auto &[name, value] : o.parameters) {
     const vtkslang::UniformField *field = nullptr;
     for (const auto &f : p.fields)
@@ -370,10 +460,11 @@ std::vector<uint8_t> Frame::packSlangParameters(
     const ANARIDataType type = value.type();
     const auto *src = static_cast<const uint8_t *>(value.data());
     const uint64_t bytes = anari::sizeOf(type);
-    if (!field || anari::isObject(type) || type == ANARI_STRING) {
+    if (!field)
+      continue;
+    if (anari::isObject(type) || type == ANARI_STRING) {
       reportOnce(ANARI_SEVERITY_WARNING,
-          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name
-              + "' does not match a plain data field of the override types");
+          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' is not plain data");
       continue;
     }
     uint8_t *dst = data.data() + field->offset;
@@ -417,7 +508,10 @@ void Frame::cleanupComputeResources()
     rel(p.color,         wgpuComputePipelineRelease);
     rel(p.depth,         wgpuComputePipelineRelease);
     rel(p.shader,        wgpuShaderModuleRelease);
-    rel(p.parametersBGL, wgpuBindGroupLayoutRelease);
+    for (SlangBlock &block : p.blocks)
+      rel(block.layout, wgpuBindGroupLayoutRelease);
+    for (WGPUBindGroupLayout &layout : p.emptyLayouts)
+      rel(layout, wgpuBindGroupLayoutRelease);
   }
   m_slangPipelines.clear();
 
@@ -450,19 +544,6 @@ static WGPUBuffer uploadStorage(WGPUDevice device, WGPUQueue queue,
   return buf;
 }
 
-static WGPUBuffer uploadUniform(WGPUDevice device, WGPUQueue queue,
-    const void *data, uint64_t size)
-{
-  WGPUBufferDescriptor desc{};
-  desc.nextInChain = nullptr;
-  desc.size = size;
-  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  desc.mappedAtCreation = false;
-  WGPUBuffer buf = wgpuDeviceCreateBuffer(device, &desc);
-  wgpuQueueWriteBuffer(queue, buf, 0, data, size);
-  return buf;
-}
-
 static WGPUBindGroup makeBindGroup7(WGPUDevice device, WGPUBindGroupLayout bgl,
     WGPUBuffer b0, uint64_t s0,
     WGPUBuffer b1, uint64_t s1,
@@ -485,22 +566,6 @@ static WGPUBindGroup makeBindGroup7(WGPUDevice device, WGPUBindGroupLayout bgl,
   bgDesc.layout = bgl;
   bgDesc.entryCount = 7;
   bgDesc.entries = e;
-  return wgpuDeviceCreateBindGroup(device, &bgDesc);
-}
-
-static WGPUBindGroup makeBindGroup1(
-    WGPUDevice device, WGPUBindGroupLayout bgl, WGPUBuffer buffer, uint64_t size)
-{
-  WGPUBindGroupEntry e{};
-  e.binding = 0;
-  e.buffer = buffer;
-  e.offset = 0;
-  e.size = size;
-  WGPUBindGroupDescriptor bgDesc{};
-  bgDesc.nextInChain = nullptr;
-  bgDesc.layout = bgl;
-  bgDesc.entryCount = 1;
-  bgDesc.entries = &e;
   return wgpuDeviceCreateBindGroup(device, &bgDesc);
 }
 
@@ -699,14 +764,9 @@ void Frame::renderFrame()
                   : nullptr;
               WGPUComputePipeline depthPipeline = sp ? sp->depth : m_pbrDepthPipeline;
               WGPUComputePipeline colorPipeline = sp ? sp->color : m_pbrPipeline;
-              WGPUBuffer slangBuf = nullptr;
-              WGPUBindGroup bg1 = nullptr;
-              if (sp && sp->parametersBGL) {
-                std::vector<uint8_t> values =
-                    packSlangParameters(*sp, pbrMat->slangOverride());
-                slangBuf = uploadUniform(device, queue, values.data(), values.size());
-                bg1 = makeBindGroup1(device, sp->parametersBGL, slangBuf, values.size());
-              }
+              SlangBindGroups slangGroups = sp
+                  ? makeSlangBindGroups(device, queue, sp, pbrMat->slangOverride())
+                  : SlangBindGroups{};
 
               WGPUComputePassDescriptor passDesc{};
               passDesc.nextInChain = nullptr;
@@ -717,8 +777,8 @@ void Frame::renderFrame()
                     wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
                 wgpuComputePassEncoderSetPipeline(dpass, depthPipeline);
                 wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
-                if (bg1)
-                  wgpuComputePassEncoderSetBindGroup(dpass, 1, bg1, 0, nullptr);
+                for (const auto &group : slangGroups.groups)
+                  wgpuComputePassEncoderSetBindGroup(dpass, group.first, group.second, 0, nullptr);
                 wgpuComputePassEncoderDispatchWorkgroups(
                     dpass, (numTris + 255) / 256, 1, 1);
                 wgpuComputePassEncoderEnd(dpass);
@@ -728,18 +788,18 @@ void Frame::renderFrame()
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
               wgpuComputePassEncoderSetPipeline(pass, colorPipeline);
               wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-              if (bg1)
-                wgpuComputePassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
+              for (const auto &group : slangGroups.groups)
+                wgpuComputePassEncoderSetBindGroup(pass, group.first, group.second, 0, nullptr);
               wgpuComputePassEncoderDispatchWorkgroups(
                   pass, (numTris + 255) / 256, 1, 1);
               wgpuComputePassEncoderEnd(pass);
               wgpuComputePassEncoderRelease(pass);
               wgpuBindGroupRelease(bg);
               wgpuBufferRelease(ub);
-              if (bg1)
-                wgpuBindGroupRelease(bg1);
-              if (slangBuf)
-                wgpuBufferRelease(slangBuf);
+              for (const auto &group : slangGroups.groups)
+                wgpuBindGroupRelease(group.second);
+              for (WGPUBuffer buffer : slangGroups.buffers)
+                wgpuBufferRelease(buffer);
 
             } else {
               float4 matColor = matteMat
@@ -775,14 +835,9 @@ void Frame::renderFrame()
                   : nullptr;
               WGPUComputePipeline depthPipeline = sp ? sp->depth : m_rasterDepthPipeline;
               WGPUComputePipeline colorPipeline = sp ? sp->color : m_rasterPipeline;
-              WGPUBuffer slangBuf = nullptr;
-              WGPUBindGroup bg1 = nullptr;
-              if (sp && sp->parametersBGL) {
-                std::vector<uint8_t> values =
-                    packSlangParameters(*sp, matteMat->slangOverride());
-                slangBuf = uploadUniform(device, queue, values.data(), values.size());
-                bg1 = makeBindGroup1(device, sp->parametersBGL, slangBuf, values.size());
-              }
+              SlangBindGroups slangGroups = sp
+                  ? makeSlangBindGroups(device, queue, sp, matteMat->slangOverride())
+                  : SlangBindGroups{};
 
               WGPUComputePassDescriptor passDesc{};
               passDesc.nextInChain = nullptr;
@@ -793,8 +848,8 @@ void Frame::renderFrame()
                     wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
                 wgpuComputePassEncoderSetPipeline(dpass, depthPipeline);
                 wgpuComputePassEncoderSetBindGroup(dpass, 0, bg, 0, nullptr);
-                if (bg1)
-                  wgpuComputePassEncoderSetBindGroup(dpass, 1, bg1, 0, nullptr);
+                for (const auto &group : slangGroups.groups)
+                  wgpuComputePassEncoderSetBindGroup(dpass, group.first, group.second, 0, nullptr);
                 wgpuComputePassEncoderDispatchWorkgroups(
                     dpass, (numTris + 255) / 256, 1, 1);
                 wgpuComputePassEncoderEnd(dpass);
@@ -804,18 +859,18 @@ void Frame::renderFrame()
                   wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
               wgpuComputePassEncoderSetPipeline(pass, colorPipeline);
               wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-              if (bg1)
-                wgpuComputePassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
+              for (const auto &group : slangGroups.groups)
+                wgpuComputePassEncoderSetBindGroup(pass, group.first, group.second, 0, nullptr);
               wgpuComputePassEncoderDispatchWorkgroups(
                   pass, (numTris + 255) / 256, 1, 1);
               wgpuComputePassEncoderEnd(pass);
               wgpuComputePassEncoderRelease(pass);
               wgpuBindGroupRelease(bg);
               wgpuBufferRelease(ub);
-              if (bg1)
-                wgpuBindGroupRelease(bg1);
-              if (slangBuf)
-                wgpuBufferRelease(slangBuf);
+              for (const auto &group : slangGroups.groups)
+                wgpuBindGroupRelease(group.second);
+              for (WGPUBuffer buffer : slangGroups.buffers)
+                wgpuBufferRelease(buffer);
             }
 
             wgpuBufferRelease(posBuf);

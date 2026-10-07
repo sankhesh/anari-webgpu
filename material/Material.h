@@ -20,12 +20,13 @@ struct SlangOverride
   std::string normalType;
   std::string outputType;
   std::string vertexType;
+  std::string hooksType;
   std::vector<std::pair<std::string, helium::AnariAny>> parameters;
 
   bool active() const
   {
     return !materialType.empty() || !lightingType.empty() || !normalType.empty()
-        || !outputType.empty() || !vertexType.empty();
+        || !outputType.empty() || !vertexType.empty() || !hooksType.empty();
   }
 };
 
