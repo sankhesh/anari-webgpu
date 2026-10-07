@@ -21,6 +21,7 @@ static void statusFunc(const void *, ANARIDevice, ANARIObject, ANARIDataType,
 static const char *kModule = R"(
 module test_tint;
 import vtkslang_shading;
+import vtkslang_hooks;
 public struct Tinted : IMaterial {
   float4 tint;
   float3x3 colorMatrix;
@@ -39,6 +40,14 @@ public struct Erase : ISurfaceOutput {
   public bool keep(SurfaceSample s) { return false; }
   public float4 finish(float4 c, MaterialSample m, SurfaceSample s) { return c; }
   public float depth(float d, SurfaceSample s) { return d; }
+};
+public struct Paint : IShaderHooks {
+  float3 tint;
+  public override void output(inout FragmentContext f) { f.color = float4(tint, 1.f); }
+};
+public struct Halve : IShaderHooks {
+  float amount;
+  public override void lit(inout FragmentContext f) { f.color.rgb *= amount; }
 };
 public struct Shift : IVertexModifier {
   float offset;
@@ -231,6 +240,33 @@ int main()
     return fail("IVertexModifier with no offset changed the image (expected blue)", rgb);
   anariUnsetParameter(s.device, s.material, "slang.vertex");
   anariUnsetParameter(s.device, s.material, "slang.vertex.offset");
+  printf(" PASSED\n");
+
+  printf("  shader hooks...");
+  float magenta[] = {1, 0, 1};
+  anariUnsetParameter(s.device, s.material, "slang.material");
+  anariSetParameter(s.device, s.material, "slang.hooks", ANARI_STRING, "Paint");
+  anariSetParameter(s.device, s.material, "slang.hooks.tint", ANARI_FLOAT32_VEC3, magenta);
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (!(rgb[0] > 200 && rgb[2] > 200 && rgb[1] < 40))
+    return fail("IShaderHooks::output() alone was not applied (expected magenta)", rgb);
+  int full[3], halved[3];
+  float half = 0.5f, whole = 1.f;
+  anariSetParameter(s.device, s.material, "slang.material", ANARI_STRING, materialType);
+  anariSetParameter(s.device, s.material, "slang.hooks", ANARI_STRING, "Halve");
+  anariSetParameter(s.device, s.material, "slang.hooks.amount", ANARI_FLOAT32, &whole);
+  anariCommitParameters(s.device, s.material);
+  render(s, full);
+  anariSetParameter(s.device, s.material, "slang.hooks.amount", ANARI_FLOAT32, &half);
+  anariCommitParameters(s.device, s.material);
+  render(s, halved);
+  if (dominant(full) != 2 || std::abs(halved[2] * 2 - full[2]) > 3)
+    return fail("IShaderHooks::lit() with a material override did not halve the color", halved);
+  anariUnsetParameter(s.device, s.material, "slang.hooks");
+  anariUnsetParameter(s.device, s.material, "slang.hooks.amount");
+  anariUnsetParameter(s.device, s.material, "slang.hooks.tint");
+  anariCommitParameters(s.device, s.material);
   printf(" PASSED\n");
 
   printf("  broken override...");
