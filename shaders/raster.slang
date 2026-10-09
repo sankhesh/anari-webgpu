@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import anari_raster_common;
-import vtkslang_shading;
-import vtkslang_hooks;
+import vtkslang_surface;
 
 type_param M : IMaterial;
 type_param L : ILightingModel;
@@ -53,22 +52,7 @@ uint3 triangleIndices(uint triIdx)
     return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
 }
 
-VertexContext vertexContext(VertexSample v)
-{
-    VertexContext c = VertexContext();
-    c.positionMC  = float4(v.position, 1.f);
-    c.normalMC    = v.normal;
-    c.tangentMC   = v.tangent;
-    c.uv          = v.uv;
-    c.color       = v.color;
-    c.pointId     = v.pointId;
-    c.cellId      = v.cellId;
-    c.primitiveId = v.primitiveId;
-    c.modelToClip = params.mvp;
-    return c;
-}
-
-VertexSample fetchVertex(uint triIdx, uint idx)
+VertexSample fetchVertex(uint triIdx, uint idx, out VertexContext c)
 {
     VertexSample v = VertexSample();
     v.position    = getPosition(idx);
@@ -80,23 +64,7 @@ VertexSample fetchVertex(uint triIdx, uint idx)
     v.cellId      = triIdx;
     v.primitiveId = triIdx;
     v.modelToClip = params.mvp;
-    v = shading.vertex.modify(v);
-    VertexContext c = vertexContext(v);
-    hookBlock.hooks.vertex(c);
-    v.position = c.positionMC.xyz;
-    v.normal   = c.normalMC;
-    v.tangent  = c.tangentMC;
-    v.uv       = c.uv;
-    v.color    = c.color;
-    return v;
-}
-
-float4 project(VertexSample v)
-{
-    VertexContext c = vertexContext(v);
-    c.positionClip  = mul(params.mvp, c.positionMC);
-    hookBlock.hooks.position(c);
-    return c.positionClip;
+    return shadeVertex(shading, hookBlock.hooks, v, c);
 }
 
 struct Triangle
@@ -112,10 +80,13 @@ bool setupTriangle(uint triIdx, out Triangle r)
     r = Triangle();
     r.id = triIdx;
     uint3 i = triangleIndices(triIdx);
-    r.v0 = fetchVertex(triIdx, i.x);
-    r.v1 = fetchVertex(triIdx, i.y);
-    r.v2 = fetchVertex(triIdx, i.z);
-    if (!setupScreenTriangleClip(project(r.v0), project(r.v1), project(r.v2),
+    VertexContext c0, c1, c2;
+    r.v0 = fetchVertex(triIdx, i.x, c0);
+    r.v1 = fetchVertex(triIdx, i.y, c1);
+    r.v2 = fetchVertex(triIdx, i.z, c2);
+    if (!setupScreenTriangleClip(projectVertex(hookBlock.hooks, c0, mul(params.mvp, c0.positionMC)),
+                                 projectVertex(hookBlock.hooks, c1, mul(params.mvp, c1.positionMC)),
+                                 projectVertex(hookBlock.hooks, c2, mul(params.mvp, c2.positionMC)),
                                  params.width, params.height, r.t))
         return false;
     if (params.hasNormals != 0u)
@@ -125,44 +96,57 @@ bool setupTriangle(uint triIdx, out Triangle r)
     return true;
 }
 
-SurfaceSample surfaceSample(Triangle r, float3 w, int px, int py, float depth)
-{
-    SurfaceSample s = SurfaceSample();
-    s.position    = r.v0.position*w.x + r.v1.position*w.y + r.v2.position*w.z;
-    s.normal      = r.faceNormal;
-    s.uv          = r.v0.uv*w.x + r.v1.uv*w.y + r.v2.uv*w.z;
-    s.fragCoord   = float4(float(px) + 0.5f, float(py) + 0.5f, depth, 1.f);
-    s.primitiveId = r.id;
-    s.cellId      = r.id;
-    s.frontFacing = r.t.area < 0.f;
-    s.camera.shadingToClip = params.mvp;
-    return s;
-}
-
-FragmentContext fragmentContext(SurfaceSample s)
+FragmentContext rasterFragment(Triangle r, float3 w, int px, int py, float depth)
 {
     FragmentContext f = FragmentContext();
-    f.positionVC  = float4(s.position, 1.f);
-    f.normalVC    = s.normal;
-    f.tangentVC   = s.tangent;
-    f.uv          = s.uv;
-    f.fragCoord   = s.fragCoord;
-    f.primitiveId = s.primitiveId;
-    f.cellId      = s.cellId;
-    f.frontFacing = s.frontFacing;
-    f.depth       = s.fragCoord.z;
+    f.positionVC  = float4(r.v0.position*w.x + r.v1.position*w.y + r.v2.position*w.z, 1.f);
+    f.normalVC    = r.faceNormal;
+    f.uv          = r.v0.uv*w.x + r.v1.uv*w.y + r.v2.uv*w.z;
+    f.fragCoord   = float4(float(px) + 0.5f, float(py) + 0.5f, depth, 1.f);
+    f.depth       = depth;
+    f.primitiveId = r.id;
+    f.cellId      = r.id;
+    f.frontFacing = r.t.area < 0.f;
     return f;
 }
 
-bool fragmentDepth(SurfaceSample s, float z, out float depth)
+struct RasterSource : ISurfaceSource
 {
-    FragmentContext f = fragmentContext(s);
-    depth = z;
-    if (!hookBlock.hooks.clip(f) || !shading.output.keep(s))
-        return false;
-    f.depth = shading.output.depth(z, s);
-    hookBlock.hooks.output(f);
+    Triangle r;
+    float3   w;
+
+    void colors(inout FragmentContext f)
+    {
+        float4 color = (r.v0.color * params.materialColor)*w.x + (r.v1.color * params.materialColor)*w.y
+                     + (r.v2.color * params.materialColor)*w.z;
+        f.diffuseColor = color.rgb;
+        f.opacity      = color.a;
+    }
+    SurfaceSample sample(FragmentContext f)
+    {
+        SurfaceSample s = surfaceSample(f);
+        s.viewDir = float3(0.f, 0.f, 1.f);
+        s.camera.shadingToClip = params.mvp;
+        return s;
+    }
+    uint lightCount(SurfaceSample s) { return 1u; }
+    LightSample light(uint i, SurfaceSample s)
+    {
+        LightSample light = LightSample();
+        light.direction = normalize(-params.lightDir);
+        light.radiance  = float3(1.f);
+        return light;
+    }
+    float3 ambientRadiance(SurfaceSample s) { return float3(params.ambientRadiance); }
+};
+
+bool fragmentDepth(RasterSource source, inout FragmentContext f, out SurfaceSample s,
+                   out float depth)
+{
     depth = f.depth;
+    if (!surfaceCoverage(shading, hookBlock.hooks, source, f, s))
+        return false;
+    depth = outputDepth(hookBlock.hooks, f);
     return true;
 }
 
@@ -183,10 +167,11 @@ void depth_main(uint3 gid : SV_DispatchThreadID)
             float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
-            float         z = interpolateDepth(r.t, w);
-            SurfaceSample s = surfaceSample(r, w, px, py, z);
-            float         depth;
-            if (!fragmentDepth(s, z, depth))
+            RasterSource    source = { r, w };
+            FragmentContext f      = rasterFragment(r, w, px, py, interpolateDepth(r.t, w));
+            SurfaceSample   s;
+            float           depth;
+            if (!fragmentDepth(source, f, s, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
             depthBufI[pixIdx].min(depthToU32(depth));
@@ -206,48 +191,22 @@ void main(uint3 gid : SV_DispatchThreadID)
     if (!setupTriangle(triIdx, r))
         return;
 
-    LightSample light = LightSample();
-    light.direction = normalize(-params.lightDir);
-    light.radiance  = float3(1.f);
-
-    float4 c0 = r.v0.color * params.materialColor;
-    float4 c1 = r.v1.color * params.materialColor;
-    float4 c2 = r.v2.color * params.materialColor;
-
     for (int py = int(r.t.minY); py <= int(r.t.maxY); py++) {
         for (int px = int(r.t.minX); px <= int(r.t.maxX); px++) {
             float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
-
-            float         z = interpolateDepth(r.t, w);
-            SurfaceSample s = surfaceSample(r, w, px, py, z);
-            float         depth;
-            if (!fragmentDepth(s, z, depth))
+            RasterSource    source = { r, w };
+            FragmentContext f      = rasterFragment(r, w, px, py, interpolateDepth(r.t, w));
+            SurfaceSample   s;
+            float           depth;
+            if (!fragmentDepth(source, f, s, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
             if (depthToU32(depth) > depthBufI[pixIdx].load() + kDepthTolerance)
                 continue;
-
-            float4          color = c0*w.x + c1*w.y + c2*w.z;
-            FragmentContext f     = fragmentContext(s);
-            f.diffuseColor = color.rgb;
-            f.opacity      = color.a;
-            hookBlock.hooks.color(f);
-            hookBlock.hooks.normal(f);
-            s.host.baseColor = f.diffuseColor;
-            s.host.opacity   = f.opacity;
-            s.normal         = f.normalVC;
-            s.normal         = shading.normal.normal(s);
-
-            MaterialSample m = shading.material.evaluate(s);
-            float3 radiance  = shading.lighting.ambient(m, s, float3(params.ambientRadiance))
-                             + shading.lighting.direct(m, s, light);
-            f.color = float4(shading.lighting.resolve(radiance, m) + m.emissive, m.opacity);
-            hookBlock.hooks.lit(f);
-            f.color = shading.output.finish(f.color, m, s);
-            f.depth = depth;
-            hookBlock.hooks.output(f);
+            if (!surfaceShade(shading, hookBlock.hooks, source, f, s))
+                continue;
             colorBuf[pixIdx] = f.color;
         }
     }

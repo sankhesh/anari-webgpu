@@ -248,12 +248,12 @@ The GPU path creates a single render pipeline with WGSL shaders that support:
 
 The device's Slang shaders live in `shaders/`: `clear`, `raster`, `pbr` and
 `volume`, with the helper modules `anari_raster_common` and `anari_scivis`.
-They import vtkSlang's shared modules (`vtkslang_shading`, `vtkslang_hooks`).
-`generated/` holds their WGSL, compiled with the default specializations and
-embedded in the device, so the default shading needs no Slang at run time.
-After editing a shader, run the `anari_webgpu_update_wgsl` target and commit
-`generated/`; the `test_generated_wgsl_up_to_date` test fails while they
-differ.
+They import vtkSlang's shared modules (`vtkslang_surface`, `vtkslang_shading`,
+`vtkslang_hooks`). `generated/` holds their WGSL, compiled with the default
+specializations and embedded in the device, so the default shading needs no
+Slang at run time. After editing a shader, run the `anari_webgpu_update_wgsl`
+target and commit `generated/`; the `test_generated_wgsl_up_to_date` test fails
+while they differ.
 
 ## Shading overrides (`WEBGPU_MATERIAL_SLANG`)
 

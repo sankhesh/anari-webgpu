@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import anari_raster_common;
-import vtkslang_shading;
-import vtkslang_hooks;
+import vtkslang_surface;
 
 type_param M : IMaterial;
 type_param L : ILightingModel;
@@ -57,22 +56,7 @@ uint3 pbr_triangleIndices(uint triIdx)
     return uint3(indices[triIdx*3u], indices[triIdx*3u+1u], indices[triIdx*3u+2u]);
 }
 
-VertexContext pbr_vertexContext(VertexSample v)
-{
-    VertexContext c = VertexContext();
-    c.positionMC  = float4(v.position, 1.f);
-    c.normalMC    = v.normal;
-    c.tangentMC   = v.tangent;
-    c.uv          = v.uv;
-    c.color       = v.color;
-    c.pointId     = v.pointId;
-    c.cellId      = v.cellId;
-    c.primitiveId = v.primitiveId;
-    c.modelToClip = params.mvp;
-    return c;
-}
-
-VertexSample pbr_fetchVertex(uint triIdx, uint idx)
+VertexSample pbr_fetchVertex(uint triIdx, uint idx, out VertexContext c)
 {
     VertexSample v = VertexSample();
     v.position    = pbr_getPos(idx);
@@ -84,23 +68,7 @@ VertexSample pbr_fetchVertex(uint triIdx, uint idx)
     v.cellId      = triIdx;
     v.primitiveId = triIdx;
     v.modelToClip = params.mvp;
-    v = shading.vertex.modify(v);
-    VertexContext c = pbr_vertexContext(v);
-    hookBlock.hooks.vertex(c);
-    v.position = c.positionMC.xyz;
-    v.normal   = c.normalMC;
-    v.tangent  = c.tangentMC;
-    v.uv       = c.uv;
-    v.color    = c.color;
-    return v;
-}
-
-float4 pbr_project(VertexSample v)
-{
-    VertexContext c = pbr_vertexContext(v);
-    c.positionClip  = mul(params.mvp, c.positionMC);
-    hookBlock.hooks.position(c);
-    return c.positionClip;
+    return shadeVertex(shading, hookBlock.hooks, v, c);
 }
 
 struct PBRTriangle
@@ -115,56 +83,88 @@ bool pbr_setupTriangle(uint triIdx, out PBRTriangle r)
     r = PBRTriangle();
     r.id = triIdx;
     uint3 i = pbr_triangleIndices(triIdx);
-    r.v0 = pbr_fetchVertex(triIdx, i.x);
-    r.v1 = pbr_fetchVertex(triIdx, i.y);
-    r.v2 = pbr_fetchVertex(triIdx, i.z);
-    return setupScreenTriangleClip(pbr_project(r.v0), pbr_project(r.v1), pbr_project(r.v2),
+    VertexContext c0, c1, c2;
+    r.v0 = pbr_fetchVertex(triIdx, i.x, c0);
+    r.v1 = pbr_fetchVertex(triIdx, i.y, c1);
+    r.v2 = pbr_fetchVertex(triIdx, i.z, c2);
+    return setupScreenTriangleClip(projectVertex(hookBlock.hooks, c0, mul(params.mvp, c0.positionMC)),
+                                   projectVertex(hookBlock.hooks, c1, mul(params.mvp, c1.positionMC)),
+                                   projectVertex(hookBlock.hooks, c2, mul(params.mvp, c2.positionMC)),
                                    params.width, params.height, r.t);
 }
 
-SurfaceSample pbr_surfaceSample(PBRTriangle r, float3 w, int px, int py, float depth)
-{
-    SurfaceSample s = SurfaceSample();
-    s.position = r.v0.position*w.x + r.v1.position*w.y + r.v2.position*w.z;
-    if (params.hasNormals != 0u)
-        s.normal = normalize(r.v0.normal*w.x + r.v1.normal*w.y + r.v2.normal*w.z);
-    else
-        s.normal = normalize(cross(r.v1.position - r.v0.position, r.v2.position - r.v0.position));
-    float3 ndcC   = r.t.ndc0*w.x + r.t.ndc1*w.y + r.t.ndc2*w.z;
-    s.viewDir     = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
-    s.uv          = r.v0.uv*w.x + r.v1.uv*w.y + r.v2.uv*w.z;
-    s.fragCoord   = float4(float(px) + 0.5f, float(py) + 0.5f, depth, 1.f);
-    s.primitiveId = r.id;
-    s.cellId      = r.id;
-    s.frontFacing = r.t.area < 0.f;
-    s.camera.shadingToClip = params.mvp;
-    return s;
-}
-
-FragmentContext pbr_fragmentContext(SurfaceSample s)
+FragmentContext pbr_fragment(PBRTriangle r, float3 w, int px, int py, float depth)
 {
     FragmentContext f = FragmentContext();
-    f.positionVC  = float4(s.position, 1.f);
-    f.normalVC    = s.normal;
-    f.tangentVC   = s.tangent;
-    f.uv          = s.uv;
-    f.fragCoord   = s.fragCoord;
-    f.primitiveId = s.primitiveId;
-    f.cellId      = s.cellId;
-    f.frontFacing = s.frontFacing;
-    f.depth       = s.fragCoord.z;
+    f.positionVC = float4(r.v0.position*w.x + r.v1.position*w.y + r.v2.position*w.z, 1.f);
+    if (params.hasNormals != 0u)
+        f.normalVC = normalize(r.v0.normal*w.x + r.v1.normal*w.y + r.v2.normal*w.z);
+    else
+        f.normalVC = normalize(cross(r.v1.position - r.v0.position, r.v2.position - r.v0.position));
+    f.uv          = r.v0.uv*w.x + r.v1.uv*w.y + r.v2.uv*w.z;
+    f.fragCoord   = float4(float(px) + 0.5f, float(py) + 0.5f, depth, 1.f);
+    f.depth       = depth;
+    f.primitiveId = r.id;
+    f.cellId      = r.id;
+    f.frontFacing = r.t.area < 0.f;
     return f;
 }
 
-bool pbr_fragmentDepth(SurfaceSample s, float z, out float depth)
+struct PBRSource : ISurfaceSource
 {
-    FragmentContext f = pbr_fragmentContext(s);
-    depth = z;
-    if (!hookBlock.hooks.clip(f) || !shading.output.keep(s))
-        return false;
-    f.depth = shading.output.depth(z, s);
-    hookBlock.hooks.output(f);
+    PBRTriangle r;
+    float3      w;
+
+    void colors(inout FragmentContext f)
+    {
+        float3 baseRGB = params.baseColor.rgb;
+        if (params.hasColors != 0u) {
+            float4 vc = r.v0.color*w.x + r.v1.color*w.y + r.v2.color*w.z;
+            baseRGB = baseRGB * vc.rgb;
+        }
+        f.diffuseColor = baseRGB;
+        f.opacity      = params.baseColor.a;
+    }
+    SurfaceSample sample(FragmentContext f)
+    {
+        SurfaceSample s = surfaceSample(f);
+        float3 ndcC = r.t.ndc0*w.x + r.t.ndc1*w.y + r.t.ndc2*w.z;
+        s.viewDir   = normalize(float3(-ndcC.x, -ndcC.y, 1.f));
+        s.camera.shadingToClip = params.mvp;
+        s.host.metallic  = params.metallicRoughness.x;
+        s.host.roughness = params.metallicRoughness.y;
+        s.host.emissive  = params.emissive.xyz * params.emissive.w;
+        return s;
+    }
+    uint lightCount(SurfaceSample s) { return 1u; }
+    LightSample light(uint i, SurfaceSample s)
+    {
+        LightSample light = LightSample();
+        light.direction = normalize(-params.lightDir);
+        light.radiance  = params.lightIrradiance * params.lightColor;
+        return light;
+    }
+    float3 ambientRadiance(SurfaceSample s) { return float3(params.ambientRadiance); }
+    override bool opacity(MaterialSample m, inout float4 color)
+    {
+        if (params.alphaMode == 2u) {
+            if (m.opacity < params.alphaCutoff)
+                return false;
+            color.a = 1.f;
+        } else if (params.alphaMode != 1u) {
+            color.a = 1.f;
+        }
+        return true;
+    }
+};
+
+bool pbr_fragmentDepth(PBRSource source, inout FragmentContext f, out SurfaceSample s,
+                       out float depth)
+{
     depth = f.depth;
+    if (!surfaceCoverage(shading, hookBlock.hooks, source, f, s))
+        return false;
+    depth = outputDepth(hookBlock.hooks, f);
     return true;
 }
 
@@ -185,10 +185,11 @@ void pbr_depth_main(uint3 gid : SV_DispatchThreadID)
             float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
-            float         z = interpolateDepth(r.t, w);
-            SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
-            float         depth;
-            if (!pbr_fragmentDepth(s, z, depth))
+            PBRSource       source = { r, w };
+            FragmentContext f      = pbr_fragment(r, w, px, py, interpolateDepth(r.t, w));
+            SurfaceSample   s;
+            float           depth;
+            if (!pbr_fragmentDepth(source, f, s, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
             depthBufI[pixIdx].min(depthToU32(depth));
@@ -208,65 +209,22 @@ void pbr_main(uint3 gid : SV_DispatchThreadID)
     if (!pbr_setupTriangle(triIdx, r))
         return;
 
-    LightSample light = LightSample();
-    light.direction = normalize(-params.lightDir);
-    light.radiance  = params.lightIrradiance * params.lightColor;
-
     for (int py = int(r.t.minY); py <= int(r.t.maxY); py++) {
         for (int px = int(r.t.minX); px <= int(r.t.maxX); px++) {
             float3 w = barycentric(r.t, px, py);
             if (!covered(w))
                 continue;
-
-            float         z = interpolateDepth(r.t, w);
-            SurfaceSample s = pbr_surfaceSample(r, w, px, py, z);
-            float         depth;
-            if (!pbr_fragmentDepth(s, z, depth))
+            PBRSource       source = { r, w };
+            FragmentContext f      = pbr_fragment(r, w, px, py, interpolateDepth(r.t, w));
+            SurfaceSample   s;
+            float           depth;
+            if (!pbr_fragmentDepth(source, f, s, depth))
                 continue;
             uint pixIdx = uint(py)*params.width + uint(px);
             if (depthToU32(depth) > depthBufI[pixIdx].load() + kDepthTolerance)
                 continue;
-
-            float3 baseRGB = params.baseColor.rgb;
-            if (params.hasColors != 0u) {
-                float4 vc = r.v0.color*w.x + r.v1.color*w.y + r.v2.color*w.z;
-                baseRGB = baseRGB * vc.rgb;
-            }
-
-            FragmentContext f = pbr_fragmentContext(s);
-            f.diffuseColor = baseRGB;
-            f.opacity      = params.baseColor.a;
-            hookBlock.hooks.color(f);
-            hookBlock.hooks.normal(f);
-            s.host.baseColor = f.diffuseColor;
-            s.host.opacity   = f.opacity;
-            s.host.metallic  = params.metallicRoughness.x;
-            s.host.roughness = params.metallicRoughness.y;
-            s.host.emissive  = params.emissive.xyz * params.emissive.w;
-            s.normal         = f.normalVC;
-            s.normal         = shading.normal.normal(s);
-
-            MaterialSample m = shading.material.evaluate(s);
-            float3 radiance  = shading.lighting.ambient(m, s, float3(params.ambientRadiance))
-                             + shading.lighting.direct(m, s, light);
-            float3 Lo = shading.lighting.resolve(radiance, m) + m.emissive;
-
-            float fragAlpha;
-            if (params.alphaMode == 2u) {
-                if (m.opacity < params.alphaCutoff)
-                    continue;
-                fragAlpha = 1.f;
-            } else if (params.alphaMode == 1u) {
-                fragAlpha = m.opacity;
-            } else {
-                fragAlpha = 1.f;
-            }
-
-            f.color = float4(Lo, fragAlpha);
-            hookBlock.hooks.lit(f);
-            f.color = shading.output.finish(f.color, m, s);
-            f.depth = depth;
-            hookBlock.hooks.output(f);
+            if (!surfaceShade(shading, hookBlock.hooks, source, f, s))
+                continue;
             colorBuf[pixIdx] = f.color;
         }
     }

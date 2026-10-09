@@ -96,7 +96,7 @@ if(NOT vtkSlang_FOUND)
   include(FetchContent)
   FetchContent_Declare(vtkSlang
     GIT_REPOSITORY https://github.com/sankhesh/vtkSlang.git
-    GIT_TAG 53f9490942508c6fd0106c0243397dbb6af87510)
+    GIT_TAG 146ab40aef44acca88ce78215401d35f2ca3daf7)
   FetchContent_MakeAvailable(vtkSlang)
 endif()
 
