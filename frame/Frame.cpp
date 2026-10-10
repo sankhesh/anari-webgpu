@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 // Context struct for buffer map callback
 struct MapContext {
@@ -185,6 +186,39 @@ static WGPUBindGroupLayoutEntry uniformEntry(uint32_t binding)
   return e;
 }
 
+static std::optional<vtkslang::HostValue> hostValue(const helium::AnariAny &value)
+{
+  using vtkslang::ScalarType;
+  struct Shape
+  {
+    ANARIDataType type;
+    ScalarType scalar;
+    uint32_t width;
+    uint32_t runs;
+  };
+  static const Shape shapes[] = {
+      {ANARI_FLOAT32, ScalarType::Float32, 1, 1},
+      {ANARI_FLOAT32_VEC2, ScalarType::Float32, 2, 1},
+      {ANARI_FLOAT32_VEC3, ScalarType::Float32, 3, 1},
+      {ANARI_FLOAT32_VEC4, ScalarType::Float32, 4, 1},
+      {ANARI_INT32, ScalarType::Int32, 1, 1},
+      {ANARI_INT32_VEC2, ScalarType::Int32, 2, 1},
+      {ANARI_INT32_VEC3, ScalarType::Int32, 3, 1},
+      {ANARI_INT32_VEC4, ScalarType::Int32, 4, 1},
+      {ANARI_UINT32, ScalarType::UInt32, 1, 1},
+      {ANARI_UINT32_VEC2, ScalarType::UInt32, 2, 1},
+      {ANARI_UINT32_VEC3, ScalarType::UInt32, 3, 1},
+      {ANARI_UINT32_VEC4, ScalarType::UInt32, 4, 1},
+      {ANARI_FLOAT32_MAT2, ScalarType::Float32, 2, 2},
+      {ANARI_FLOAT32_MAT3, ScalarType::Float32, 3, 3},
+      {ANARI_FLOAT32_MAT4, ScalarType::Float32, 4, 4},
+  };
+  for (const Shape &s : shapes)
+    if (s.type == value.type())
+      return vtkslang::HostValue{s.scalar, s.width, s.runs, value.data()};
+  return std::nullopt;
+}
+
 void Frame::initComputeResources()
 {
   auto *state = deviceState();
@@ -355,20 +389,20 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
             + artifact.diagnostics);
     return nullptr;
   }
-  for (const auto &b : artifact.bindings) {
-    if (b.group == 0)
-      continue;
-    if (b.binding == 0 && b.kind == vtkslang::BindingKind::UniformBuffer) {
-      SlangBlock block;
-      block.group = b.group;
-      block.size = b.sizeBytes;
-      block.fields = b.fields;
-      p.blocks.push_back(std::move(block));
-      continue;
-    }
+  p.plan = vtkslang::planBindings(
+      artifact, [](const vtkslang::ReflectedBinding &b) { return b.group == 0; });
+  std::vector<std::string> refused;
+  for (const auto &block : p.plan.blocks)
+    if (block.binding != 0)
+      refused.push_back(block.name);
+  for (const auto &resource : p.plan.resources)
+    refused.push_back(resource.name);
+  for (const auto &b : p.plan.unsupported)
+    refused.push_back(b.name);
+  if (!refused.empty()) {
     reportOnce(ANARI_SEVERITY_ERROR,
         "WEBGPU_MATERIAL_SLANG: override parameters must be plain data; '"
-            + b.name + "' is not supported. Using the default shading.");
+            + refused.front() + "' is not supported. Using the default shading.");
     return nullptr;
   }
 
@@ -377,15 +411,15 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
   if (!p.shader)
     return nullptr;
   uint32_t groupCount = 1;
-  for (const SlangBlock &block : p.blocks)
+  for (const auto &block : p.plan.blocks)
     groupCount = std::max(groupCount, block.group + 1);
   std::vector<WGPUBindGroupLayout> bgls(groupCount, nullptr);
   bgls[0] = group0;
-  for (SlangBlock &block : p.blocks) {
+  for (const auto &block : p.plan.blocks) {
     WGPUBindGroupLayoutEntry entry = uniformEntry(0);
-    entry.buffer.minBindingSize = block.size;
-    block.layout = makeBGL(device, &entry, 1);
-    bgls[block.group] = block.layout;
+    entry.buffer.minBindingSize = block.sizeBytes;
+    p.blockLayouts.push_back(makeBGL(device, &entry, 1));
+    bgls[block.group] = p.blockLayouts.back();
   }
   for (uint32_t g = 1; g < groupCount; ++g) {
     if (!bgls[g]) {
@@ -409,35 +443,34 @@ Frame::SlangBindGroups Frame::makeSlangBindGroups(WGPUDevice device,
   SlangBindGroups result;
   if (!p)
     return result;
-  for (const auto &parameter : o.parameters) {
-    bool found = false;
-    for (const SlangBlock &block : p->blocks)
-      for (const auto &f : block.fields)
-        found |= f.name == parameter.first;
-    if (!found)
-      reportOnce(ANARI_SEVERITY_WARNING,
-          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + parameter.first
-              + "' does not match a field of the override types");
-  }
+  std::vector<std::string> names;
+  for (const auto &parameter : o.parameters)
+    names.push_back(parameter.first);
+  for (const std::string &name : vtkslang::unmatched(p->plan, names))
+    reportOnce(ANARI_SEVERITY_WARNING,
+        "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name
+            + "' does not match a field of the override types");
+  const auto &blocks = p->plan.blocks;
   for (uint32_t g = 1;; ++g) {
-    const SlangBlock *block = nullptr;
-    for (const SlangBlock &b : p->blocks)
-      block = b.group == g ? &b : block;
+    size_t index = blocks.size();
+    for (size_t i = 0; i < blocks.size(); ++i)
+      index = blocks[i].group == g ? i : index;
     bool any = false;
-    for (const SlangBlock &b : p->blocks)
+    for (const auto &b : blocks)
       any |= b.group >= g;
     if (!any)
       break;
-    if (block) {
-      std::vector<uint8_t> values = packSlangParameters(*block, o);
+    if (index < blocks.size()) {
+      std::vector<uint8_t> values = packSlangParameters(blocks[index], o);
       WGPUBuffer buffer = uploadUniform(device, queue, values.data(), values.size());
       result.buffers.push_back(buffer);
-      result.groups.emplace_back(g, makeBindGroup1(device, block->layout, buffer, values.size()));
+      result.groups.emplace_back(
+          g, makeBindGroup1(device, p->blockLayouts[index], buffer, values.size()));
     } else {
       size_t emptyIndex = 0;
       for (uint32_t h = 1; h < g; ++h) {
         bool has = false;
-        for (const SlangBlock &b : p->blocks)
+        for (const auto &b : blocks)
           has |= b.group == h;
         emptyIndex += has ? 0 : 1;
       }
@@ -450,34 +483,30 @@ Frame::SlangBindGroups Frame::makeSlangBindGroups(WGPUDevice device,
 }
 
 std::vector<uint8_t> Frame::packSlangParameters(
-    const SlangBlock &p, const SlangOverride &o)
+    const vtkslang::BindingPlan::Block &block, const SlangOverride &o)
 {
-  std::vector<uint8_t> data((p.size + 15) & ~uint64_t(15), 0);
+  std::vector<uint8_t> data = vtkslang::blockBytes(block);
   for (const auto &[name, value] : o.parameters) {
-    const vtkslang::UniformField *field = nullptr;
-    for (const auto &f : p.fields)
-      field = f.name == name ? &f : field;
-    const ANARIDataType type = value.type();
-    const auto *src = static_cast<const uint8_t *>(value.data());
-    const uint64_t bytes = anari::sizeOf(type);
+    const vtkslang::UniformField *field = vtkslang::findField(block, name);
     if (!field)
       continue;
-    if (anari::isObject(type) || type == ANARI_STRING) {
-      reportOnce(ANARI_SEVERITY_WARNING,
-          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' is not plain data");
+    const std::string prefix = "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' ";
+    const std::optional<vtkslang::HostValue> host = hostValue(value);
+    if (!host) {
+      reportOnce(ANARI_SEVERITY_WARNING, prefix + "is not plain data");
       continue;
     }
-    uint8_t *dst = data.data() + field->offset;
-    if (type == ANARI_FLOAT32_MAT3 && field->size >= 44) {
-      for (int c = 0; c < 3; ++c)
-        std::memcpy(dst + 16 * c, src + 12 * c, 12);
-    } else if (bytes <= field->size) {
-      std::memcpy(dst, src, bytes);
-    } else {
-      reportOnce(ANARI_SEVERITY_WARNING,
-          "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' ("
-              + std::to_string(bytes) + " bytes) does not fit its field ("
-              + std::to_string(field->size) + " bytes)");
+    const std::string types = std::string("(") + anari::toString(value.type())
+        + ") does not fit its field (" + field->type + ")";
+    switch (vtkslang::pack(*field, *host, data)) {
+    case vtkslang::PackStatus::Packed:
+      break;
+    case vtkslang::PackStatus::ScalarMismatch:
+      reportOnce(ANARI_SEVERITY_WARNING, prefix + types + ": the scalar types differ");
+      break;
+    default:
+      reportOnce(ANARI_SEVERITY_WARNING, prefix + types);
+      break;
     }
   }
   return data;
@@ -508,8 +537,8 @@ void Frame::cleanupComputeResources()
     rel(p.color,         wgpuComputePipelineRelease);
     rel(p.depth,         wgpuComputePipelineRelease);
     rel(p.shader,        wgpuShaderModuleRelease);
-    for (SlangBlock &block : p.blocks)
-      rel(block.layout, wgpuBindGroupLayoutRelease);
+    for (WGPUBindGroupLayout &layout : p.blockLayouts)
+      rel(layout, wgpuBindGroupLayoutRelease);
     for (WGPUBindGroupLayout &layout : p.emptyLayouts)
       rel(layout, wgpuBindGroupLayoutRelease);
   }

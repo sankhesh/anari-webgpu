@@ -31,6 +31,15 @@ public struct Tinted : IMaterial {
     return m;
   }
 };
+public struct Swapped : IMaterial {
+  float4 tint;
+  float2x2 swap;
+  public MaterialSample evaluate(SurfaceSample s) {
+    MaterialSample m = HostDrivenMaterial().evaluate(s);
+    m.baseColor = float3(mul(swap, tint.rg), tint.b);
+    return m;
+  }
+};
 public struct Invert : ISurfaceOutput {
   public bool keep(SurfaceSample s) { return true; }
   public float4 finish(float4 c, MaterialSample m, SurfaceSample s) { return float4(1.f - c.rgb, c.a); }
@@ -209,6 +218,19 @@ int main()
   render(s, rgb);
   if (dominant(rgb) != 2)
     return fail("the colorMatrix parameter was not applied as columns (expected blue)", rgb);
+  printf(" PASSED\n");
+
+  printf("  value update (mat2)...");
+  float swapRG[] = {0, 1, 1, 0};
+  anariSetParameter(s.device, s.material, "slang.material", ANARI_STRING, "Swapped");
+  anariSetParameter(s.device, s.material, "slang.material.swap", ANARI_FLOAT32_MAT2, swapRG);
+  anariCommitParameters(s.device, s.material);
+  render(s, rgb);
+  if (dominant(rgb) != 0)
+    return fail("the float2x2 parameter was not packed as 16-byte columns (expected red)", rgb);
+  anariUnsetParameter(s.device, s.material, "slang.material.swap");
+  anariSetParameter(s.device, s.material, "slang.material", ANARI_STRING, materialType);
+  anariCommitParameters(s.device, s.material);
   printf(" PASSED\n");
 
   printf("  surface output (finish, keep)...");
