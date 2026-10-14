@@ -94,9 +94,10 @@ endif()
 find_package(vtkSlang 0.1 QUIET)
 if(NOT vtkSlang_FOUND)
   include(FetchContent)
+  set(VTKSLANG_BUILD_TOOLS ON)
   FetchContent_Declare(vtkSlang
     GIT_REPOSITORY https://github.com/sankhesh/vtkSlang.git
-    GIT_TAG f72fddfe515fa49884bc5ff14d57e0cfb7aa6ef4)
+    GIT_TAG 6ca364b5d37f4d9db3191b44be29da0f2b16e14f)
   FetchContent_MakeAvailable(vtkSlang)
 endif()
 

@@ -293,6 +293,15 @@ compile is reported once and the default shading is used. Overrides need
 runtime Slang and the GPU path; software rendering ignores them (with a
 warning).
 
+To check an override module without the device, run vtkSlang's `vtkslangc`
+against the shader it customizes, for example `vtkslangc -I shaders
+shaders/raster.slang -m my_materials.slang -s IMaterial=Tinted`. It reports
+Slang errors, and WGSL errors when a `tint` executable is available (`--tint`).
+When
+`VTKSLANG_DUMP_DIR` is set, every Slang compile writes a reproducer bundle
+there (`anari_slang_raster/`, `anari_slang_pbr/`), which `vtkslangc --replay
+<bundle> -m my_materials.slang` recompiles with an edited module.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.

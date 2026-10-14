@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 static std::string g_errors;
@@ -181,6 +184,13 @@ static int fail(const char *what, const int rgb[3])
 int main()
 {
   printf("=== Slang Material Override Tests ===\n");
+  const auto dump = std::filesystem::temp_directory_path() / "test_slang_material_dump";
+  std::filesystem::remove_all(dump);
+#ifdef _WIN32
+  _putenv_s("VTKSLANG_DUMP_DIR", dump.string().c_str());
+#else
+  setenv("VTKSLANG_DUMP_DIR", dump.string().c_str(), 1);
+#endif
   Scene s = createScene();
   int defaults[3], rgb[3];
   render(s, defaults);
@@ -209,6 +219,21 @@ int main()
   printf("  tint...");
   if (dominant(rgb) != 1)
     return fail("the tint parameter was not applied (expected green)", rgb);
+  printf(" PASSED\n");
+
+  printf("  reproducer dump...");
+  const auto bundle = dump / "anari_slang_raster";
+  std::stringstream options, program, helper, user;
+  options << std::ifstream(bundle / "options.txt").rdbuf();
+  program << std::ifstream(bundle / "program.slang").rdbuf();
+  helper << std::ifstream(bundle / "program-module0.slang").rdbuf();
+  user << std::ifstream(bundle / "module0.slang").rdbuf();
+  if (options.str().find("label anari_slang_raster\n") == std::string::npos
+      || options.str().find("specialize IMaterial=Tinted\n") == std::string::npos
+      || program.str().find("depth_main") == std::string::npos
+      || helper.str().find("module anari_raster_common;") == std::string::npos
+      || user.str() != kModule)
+    return fail("VTKSLANG_DUMP_DIR did not get a bundle for the override", rgb);
   printf(" PASSED\n");
 
   printf("  value update (mat3)...");
@@ -317,6 +342,7 @@ int main()
   anariRelease(s.device, s.camera);
   anariRelease(s.device, s.world);
   anariRelease(s.device, s.device);
+  std::filesystem::remove_all(dump);
   printf("All Slang material tests passed.\n");
   return 0;
 }

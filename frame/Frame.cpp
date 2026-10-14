@@ -365,6 +365,7 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
   SlangPipelines &p = m_slangPipelines[key];
 
   vtkslang::CompileOptions options;
+  options.label = std::string("anari_slang_") + shader;
   if (!o.source.empty())
     options.modules.push_back(o.source);
   if (!o.materialType.empty())
