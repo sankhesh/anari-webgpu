@@ -1,13 +1,17 @@
 // Minimal WebGPU header stub for compilation without a WebGPU implementation.
-// This provides type definitions and function declarations matching the
-// webgpu-native/webgpu-headers specification from
-// https://github.com/webgpu-native/webgpu-headers
+// Derived from webgpu.h in webgpu-native/webgpu-headers
+// (https://github.com/webgpu-native/webgpu-headers), around commit d582cd76cd
+// (2024-01-10), and trimmed to what anari-webgpu uses: the attribute macros are
+// removed, some enum and WGPUBool fields are declared as int, and
+// wgpuDeviceTick is declared as in Dawn's dawn/webgpu.h. See LICENSE in this
+// directory.
 //
 // When building with an actual WebGPU implementation (wgpu-native, Dawn, or
 // Emscripten), this header is NOT used - the real header from the
 // implementation is used instead.
 //
-// Copyright 2026 The anari-webgpu Authors
+// Copyright (c) 2019, "WebGPU native" developers
+// Modifications copyright 2026 The anari-webgpu Authors
 // SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef WEBGPU_H_

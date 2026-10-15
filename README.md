@@ -305,3 +305,9 @@ there (`anari_slang_raster/`, `anari_slang_pbr/`), which `vtkslangc --replay
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.
+
+`external/webgpu/webgpu.h`, the stub used when no WebGPU implementation is
+found, is derived from
+[webgpu-native/webgpu-headers](https://github.com/webgpu-native/webgpu-headers)
+and stays under its BSD-3-Clause license; see
+[external/webgpu/LICENSE](external/webgpu/LICENSE).
