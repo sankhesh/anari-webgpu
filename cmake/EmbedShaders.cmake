@@ -5,7 +5,7 @@ if(NOT PATTERN)
   set(PATTERN "*.slang")
 endif()
 if(NOT NAMESPACE)
-  set(NAMESPACE "vtkSlangSources")
+  set(NAMESPACE "SlangKitSources")
 endif()
 
 set(_chunk 8000)

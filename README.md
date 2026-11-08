@@ -248,8 +248,8 @@ The GPU path creates a single render pipeline with WGSL shaders that support:
 
 The device's Slang shaders live in `shaders/`: `clear`, `raster`, `pbr` and
 `volume`, with the helper modules `anari_raster_common` and `anari_scivis`.
-They import vtkSlang's shared modules (`vtkslang_surface`, `vtkslang_shading`,
-`vtkslang_hooks`). `generated/` holds their WGSL, compiled with the default
+They import SlangKit's shared modules (`slangkit_surface`, `slangkit_shading`,
+`slangkit_hooks`). `generated/` holds their WGSL, compiled with the default
 specializations and embedded in the device, so the default shading needs no
 Slang at run time. After editing a shader, run the `anari_webgpu_update_wgsl`
 target and commit `generated/`; the `test_generated_wgsl_up_to_date` test fails
@@ -258,12 +258,12 @@ while they differ.
 ## Shading overrides (`WEBGPU_MATERIAL_SLANG`)
 
 On the GPU path, a `matte` or `physicallyBased` material can replace parts
-of the shader with Slang types implementing vtkSlang's interfaces (module
-`vtkslang_shading`): `slang.material` (`IMaterial`), `slang.lighting`
+of the shader with Slang types implementing SlangKit's interfaces (module
+`slangkit_shading`): `slang.material` (`IMaterial`), `slang.lighting`
 (`ILightingModel`), `slang.normal` (`INormalModifier`), `slang.output`
 (`ISurfaceOutput`: discard, final color, depth), `slang.vertex`
 (`IVertexModifier`: vertex displacement) and `slang.hooks` (`IShaderHooks`
-from `vtkslang_hooks`: typed insertion points in the vertex and fragment
+from `slangkit_hooks`: typed insertion points in the vertex and fragment
 stages). The
 material's own parameters keep feeding the defaults (`HostDrivenMaterial`).
 Fields of the override types are set as `slang.<path>` parameters:
@@ -271,7 +271,7 @@ Fields of the override types are set as `slang.<path>` parameters:
 ```cpp
 const char *module = R"(
 module my_materials;
-import vtkslang_shading;
+import slangkit_shading;
 public struct Tinted : IMaterial {
   float4 tint;
   public MaterialSample evaluate(SurfaceSample s) {
@@ -293,13 +293,13 @@ compile is reported once and the default shading is used. Overrides need
 runtime Slang and the GPU path; software rendering ignores them (with a
 warning).
 
-To check an override module without the device, run vtkSlang's `vtkslangc`
-against the shader it customizes, for example `vtkslangc -I shaders
+To check an override module without the device, run SlangKit's `skc`
+against the shader it customizes, for example `skc -I shaders
 shaders/raster.slang -m my_materials.slang -s IMaterial=Tinted`. It reports
 Slang errors, and WGSL errors when a `tint` executable is available (`--tint`).
 When
-`VTKSLANG_DUMP_DIR` is set, every Slang compile writes a reproducer bundle
-there (`anari_slang_raster/`, `anari_slang_pbr/`), which `vtkslangc --replay
+`SLANGKIT_DUMP_DIR` is set, every Slang compile writes a reproducer bundle
+there (`anari_slang_raster/`, `anari_slang_pbr/`), which `skc --replay
 <bundle> -m my_materials.slang` recompiles with an edited module.
 
 ## License

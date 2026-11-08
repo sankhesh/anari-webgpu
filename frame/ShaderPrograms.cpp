@@ -33,9 +33,9 @@ std::vector<std::string> shaderProgramNames()
   return names;
 }
 
-vtkslang::Program shaderProgram(const std::string &name)
+slangkit::Program shaderProgram(const std::string &name)
 {
-  vtkslang::Program program;
+  slangkit::Program program;
   for (const auto &entry : kPrograms) {
     if (name != entry.name)
       continue;
@@ -44,8 +44,8 @@ vtkslang::Program shaderProgram(const std::string &name)
     for (const char *module : entry.modules)
       program.modules.push_back(anariShaderSources::get(module));
     if (const char *wgsl = anariShaderWGSL::get(entry.name)) {
-      vtkslang::Artifact precompiled;
-      precompiled.target = vtkslang::Target::WGSL;
+      slangkit::Artifact precompiled;
+      precompiled.target = slangkit::Target::WGSL;
       precompiled.wgsl = wgsl;
       program.precompiled.push_back(precompiled);
     }

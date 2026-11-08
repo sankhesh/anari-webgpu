@@ -9,8 +9,8 @@
 #include "world/World.h"
 // helium
 #include "helium/BaseFrame.h"
-#include "vtkSlangCompiler.h"
-#include "vtkSlangParameters.h"
+#include "SlangKitCompiler.h"
+#include "SlangKitParameters.h"
 // webgpu
 #include <webgpu/webgpu.h>
 // std
@@ -68,7 +68,7 @@ struct Frame : public helium::BaseFrame
     WGPUShaderModule shader{nullptr};
     WGPUComputePipeline color{nullptr};
     WGPUComputePipeline depth{nullptr};
-    vtkslang::BindingPlan plan;
+    slangkit::BindingPlan plan;
     std::vector<WGPUBindGroupLayout> blockLayouts;
     std::vector<WGPUBindGroupLayout> emptyLayouts;
   };
@@ -84,7 +84,7 @@ struct Frame : public helium::BaseFrame
       const char *depthEntryPoint,
       const SlangOverride &slangOverride);
   std::vector<uint8_t> packSlangParameters(
-      const vtkslang::BindingPlan::Block &block, const SlangOverride &slangOverride);
+      const slangkit::BindingPlan::Block &block, const SlangOverride &slangOverride);
   SlangBindGroups makeSlangBindGroups(WGPUDevice device,
       WGPUQueue queue,
       const SlangPipelines *p,
@@ -114,7 +114,7 @@ struct Frame : public helium::BaseFrame
 
   float m_duration{0.f};
 
-  vtkslang::vtkSlangCompiler m_slangCompiler;
+  slangkit::Compiler m_slangCompiler;
 
   WGPUBuffer m_colorStorageBuf{nullptr};
   WGPUBuffer m_depthStorageBuf{nullptr};

@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-using vtkslang::BindingKind;
+using slangkit::BindingKind;
 
 static int g_failures = 0;
 
@@ -36,8 +36,8 @@ static std::string stripGeneratedHeader(const std::string &wgsl)
   return pos == std::string::npos ? wgsl : wgsl.substr(pos + 2);
 }
 
-static const vtkslang::ReflectedBinding *byName(
-    const vtkslang::Artifact &a, const std::string &name)
+static const slangkit::ReflectedBinding *byName(
+    const slangkit::Artifact &a, const std::string &name)
 {
   for (const auto &b : a.bindings)
     if (b.name == name)
@@ -45,8 +45,8 @@ static const vtkslang::ReflectedBinding *byName(
   return nullptr;
 }
 
-static const vtkslang::UniformField *field(
-    const vtkslang::ReflectedBinding *b, const std::string &name)
+static const slangkit::UniformField *field(
+    const slangkit::ReflectedBinding *b, const std::string &name)
 {
   if (b)
     for (const auto &f : b->fields)
@@ -82,7 +82,7 @@ static std::set<std::string> wgslBindings(const std::string &wgsl)
   return out;
 }
 
-static std::set<std::string> reflectedBindings(const vtkslang::Artifact &a)
+static std::set<std::string> reflectedBindings(const slangkit::Artifact &a)
 {
   std::set<std::string> out;
   for (const auto &b : a.bindings) {
@@ -130,18 +130,18 @@ static const ProgramCase kCases[] = {
     {"volume", {"vol_main"}},
 };
 
-static void testPrecompiled(vtkslang::vtkSlangCompiler &compiler)
+static void testPrecompiled(slangkit::Compiler &compiler)
 {
   check(anari_webgpu::shaderProgramNames().size() == 4,
       "the device owns four shader programs");
   for (const ProgramCase &c : kCases) {
-    vtkslang::Artifact a =
+    slangkit::Artifact a =
         compiler.compileProgram(anari_webgpu::shaderProgram(c.name));
     bool entriesOk = true;
     for (const char *e : c.entries)
       entriesOk = entriesOk
           && a.wgsl.find(std::string("fn ") + e + "(") != std::string::npos;
-    check(a && a.source == vtkslang::ArtifactSource::Precompiled && entriesOk,
+    check(a && a.source == slangkit::ArtifactSource::Precompiled && entriesOk,
         std::string("precompiled WGSL for ") + c.name
             + ", with every entry point");
   }
@@ -149,17 +149,17 @@ static void testPrecompiled(vtkslang::vtkSlangCompiler &compiler)
       "an unknown program fails");
 }
 
-static void testRuntimeMatchesBuildTime(vtkslang::vtkSlangCompiler &compiler)
+static void testRuntimeMatchesBuildTime(slangkit::Compiler &compiler)
 {
-  vtkslang::CompileOptions viaSlang;
+  slangkit::CompileOptions viaSlang;
   viaSlang.reflect = true;
   for (const ProgramCase &c : kCases) {
-    const vtkslang::Program program = anari_webgpu::shaderProgram(c.name);
-    vtkslang::Artifact built = compiler.compileProgram(program);
-    vtkslang::Artifact runtime = compiler.compileProgram(program, viaSlang);
+    const slangkit::Program program = anari_webgpu::shaderProgram(c.name);
+    slangkit::Artifact built = compiler.compileProgram(program);
+    slangkit::Artifact runtime = compiler.compileProgram(program, viaSlang);
     const std::string expected = stripGeneratedHeader(readFile(
         std::string(ANARI_WEBGPU_SOURCE_DIR "/generated/") + c.name + ".wgsl"));
-    check(runtime && runtime.source == vtkslang::ArtifactSource::Slang
+    check(runtime && runtime.source == slangkit::ArtifactSource::Slang
             && runtime.wgsl == expected
             && stripGeneratedHeader(built.wgsl) == expected,
         std::string("runtime Slang output matches generated/") + c.name
@@ -169,11 +169,11 @@ static void testRuntimeMatchesBuildTime(vtkslang::vtkSlangCompiler &compiler)
   }
 }
 
-static void testOverrides(vtkslang::vtkSlangCompiler &compiler)
+static void testOverrides(slangkit::Compiler &compiler)
 {
   const char *stripes = R"(
 module test_stripes;
-import vtkslang_shading;
+import slangkit_shading;
 public struct StripedMaterial : IMaterial {
   public float4 stripeColor;
   public float  frequency;
@@ -193,13 +193,13 @@ public struct ToonLighting : ILightingModel {
   public float3 resolve(float3 r, MaterialSample m) { return saturate(r); }
 };
 )";
-  const vtkslang::Program raster = anari_webgpu::shaderProgram("raster");
-  const vtkslang::Program pbr = anari_webgpu::shaderProgram("pbr");
+  const slangkit::Program raster = anari_webgpu::shaderProgram("raster");
+  const slangkit::Program pbr = anari_webgpu::shaderProgram("pbr");
 
-  vtkslang::CompileOptions striped;
+  slangkit::CompileOptions striped;
   striped.modules = {stripes};
   striped.specializations = {{"IMaterial", "StripedMaterial"}};
-  vtkslang::Artifact r = compiler.compileProgram(raster, striped);
+  slangkit::Artifact r = compiler.compileProgram(raster, striped);
   const auto *block = byName(r, "shading");
   bool group0Binding2 = false;
   size_t group0 = 0;
@@ -207,7 +207,7 @@ public struct ToonLighting : ILightingModel {
     group0 += b.group == 0 ? 1 : 0;
     group0Binding2 = group0Binding2 || (b.group == 0 && b.binding == 2);
   }
-  check(r && r.source == vtkslang::ArtifactSource::Slang && block
+  check(r && r.source == slangkit::ArtifactSource::Slang && block
           && block->group == 1 && block->kind == BindingKind::UniformBuffer
           && field(block, "material.stripeColor")
           && field(block, "material.frequency") && group0Binding2
@@ -217,32 +217,32 @@ public struct ToonLighting : ILightingModel {
     std::printf("%s", r.diagnostics.c_str());
   check(group0 == 7, "the override leaves the host's 7 group-0 bindings intact");
 
-  vtkslang::CompileOptions toon;
+  slangkit::CompileOptions toon;
   toon.modules = {stripes};
   toon.specializations = {{"ILightingModel", "ToonLighting"}};
-  vtkslang::Artifact p = compiler.compileProgram(pbr, toon);
+  slangkit::Artifact p = compiler.compileProgram(pbr, toon);
   check(p && p.wgsl != compiler.compileProgram(pbr).wgsl && !byName(p, "shading"),
       "pbr takes a consumer ILightingModel; a field-less override adds no bindings");
   if (!p)
     std::printf("%s", p.diagnostics.c_str());
 
-  vtkslang::CompileOptions both = toon;
+  slangkit::CompileOptions both = toon;
   both.specializations.push_back({"IMaterial", "StripedMaterial"});
   check(static_cast<bool>(compiler.compileProgram(pbr, both)),
       "both interfaces at once");
 
-  vtkslang::CompileOptions phong;
+  slangkit::CompileOptions phong;
   phong.specializations = {{"ILightingModel", "PhongLighting"}};
   check(static_cast<bool>(compiler.compileProgram(raster, phong)),
       "the library's PhongLighting can replace a shader's default");
 }
 
-static void testHooks(vtkslang::vtkSlangCompiler &compiler)
+static void testHooks(slangkit::Compiler &compiler)
 {
   const char *hooks = R"(
 module builtin_hooks;
-import vtkslang_hooks;
-import vtkslang_shading;
+import slangkit_hooks;
+import slangkit_shading;
 public struct Fade : IShaderHooks {
   float amount;
   public override void lit(inout FragmentContext f) { f.color.rgb *= amount; }
@@ -257,16 +257,16 @@ public struct Tint : IMaterial {
 };
 )";
   for (const char *shader : {"raster", "pbr"}) {
-    const vtkslang::Program program = anari_webgpu::shaderProgram(shader);
-    vtkslang::CompileOptions hooksOnly;
+    const slangkit::Program program = anari_webgpu::shaderProgram(shader);
+    slangkit::CompileOptions hooksOnly;
     hooksOnly.modules = {hooks};
     hooksOnly.specializations = {{"IShaderHooks", "Fade"}};
-    vtkslang::Artifact a = compiler.compileProgram(program, hooksOnly);
+    slangkit::Artifact a = compiler.compileProgram(program, hooksOnly);
     const auto *h = byName(a, "hookBlock");
 
-    vtkslang::CompileOptions both = hooksOnly;
+    slangkit::CompileOptions both = hooksOnly;
     both.specializations.push_back({"IMaterial", "Tint"});
-    vtkslang::Artifact b = compiler.compileProgram(program, both);
+    slangkit::Artifact b = compiler.compileProgram(program, both);
     const auto *s = byName(b, "shading");
     const auto *g = byName(b, "hookBlock");
     check(a && h && h->kind == BindingKind::UniformBuffer
@@ -282,9 +282,9 @@ public struct Tint : IMaterial {
 
 int main()
 {
-  vtkslang::vtkSlangCompiler compiler;
+  slangkit::Compiler compiler;
   testPrecompiled(compiler);
-  if (vtkslang::vtkSlangCompiler::slangAvailable()) {
+  if (slangkit::Compiler::slangAvailable()) {
     testRuntimeMatchesBuildTime(compiler);
     testOverrides(compiler);
     testHooks(compiler);

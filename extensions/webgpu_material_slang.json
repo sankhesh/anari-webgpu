@@ -15,7 +15,7 @@
                     "name" : "slang.source",
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
-                    "description" : "Slang module defining the override types (imports vtkslang_shading)"
+                    "description" : "Slang module defining the override types (imports slangkit_shading)"
                 }, {
                     "name" : "slang.material",
                     "types" : ["ANARI_STRING"],
@@ -57,7 +57,7 @@
                     "name" : "slang.source",
                     "types" : ["ANARI_STRING"],
                     "tags" : [],
-                    "description" : "Slang module defining the override types (imports vtkslang_shading)"
+                    "description" : "Slang module defining the override types (imports slangkit_shading)"
                 }, {
                     "name" : "slang.material",
                     "types" : ["ANARI_STRING"],

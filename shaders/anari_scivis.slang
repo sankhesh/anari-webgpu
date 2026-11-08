@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 module anari_scivis;
-import vtkslang_core;
+import slangkit_core;
 
 public struct SciVisParams
 {

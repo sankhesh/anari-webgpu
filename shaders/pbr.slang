@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import anari_raster_common;
-import vtkslang_surface;
+import slangkit_surface;
 
 type_param M : IMaterial;
 type_param L : ILightingModel;

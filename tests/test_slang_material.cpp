@@ -23,8 +23,8 @@ static void statusFunc(const void *, ANARIDevice, ANARIObject, ANARIDataType,
 
 static const char *kModule = R"(
 module test_tint;
-import vtkslang_shading;
-import vtkslang_hooks;
+import slangkit_shading;
+import slangkit_hooks;
 public struct Tinted : IMaterial {
   float4 tint;
   float3x3 colorMatrix;
@@ -187,9 +187,9 @@ int main()
   const auto dump = std::filesystem::temp_directory_path() / "test_slang_material_dump";
   std::filesystem::remove_all(dump);
 #ifdef _WIN32
-  _putenv_s("VTKSLANG_DUMP_DIR", dump.string().c_str());
+  _putenv_s("SLANGKIT_DUMP_DIR", dump.string().c_str());
 #else
-  setenv("VTKSLANG_DUMP_DIR", dump.string().c_str(), 1);
+  setenv("SLANGKIT_DUMP_DIR", dump.string().c_str(), 1);
 #endif
   Scene s = createScene();
   int defaults[3], rgb[3];
@@ -233,7 +233,7 @@ int main()
       || program.str().find("depth_main") == std::string::npos
       || helper.str().find("module anari_raster_common;") == std::string::npos
       || user.str() != kModule)
-    return fail("VTKSLANG_DUMP_DIR did not get a bundle for the override", rgb);
+    return fail("SLANGKIT_DUMP_DIR did not get a bundle for the override", rgb);
   printf(" PASSED\n");
 
   printf("  value update (mat3)...");

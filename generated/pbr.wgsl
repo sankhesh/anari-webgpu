@@ -1,5 +1,5 @@
 // Generated from shaders/pbr.slang with its default specializations
-// by vtkSlang (Slang 2026.13.1). Do not edit; regenerate with the
+// by SlangKit (Slang 2026.13.1). Do not edit; regenerate with the
 // anari_webgpu_update_wgsl target.
 
 struct _MatrixStorage_float4x4_ColMajorstd140_0

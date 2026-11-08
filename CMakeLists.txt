@@ -91,14 +91,14 @@ if(NOT
   endif()
 endif()
 
-find_package(vtkSlang 0.1 QUIET)
-if(NOT vtkSlang_FOUND)
+find_package(SlangKit 0.1 QUIET)
+if(NOT SlangKit_FOUND)
   include(FetchContent)
-  set(VTKSLANG_BUILD_TOOLS ON)
-  FetchContent_Declare(vtkSlang
-    GIT_REPOSITORY https://github.com/sankhesh/vtkSlang.git
-    GIT_TAG 6ca364b5d37f4d9db3191b44be29da0f2b16e14f)
-  FetchContent_MakeAvailable(vtkSlang)
+  set(SLANGKIT_BUILD_TOOLS ON)
+  FetchContent_Declare(SlangKit
+    GIT_REPOSITORY https://github.com/sankhesh/SlangKit.git
+    GIT_TAG fbe3b80ee2157a64e863b93d3811b4ade5833b05)
+  FetchContent_MakeAvailable(SlangKit)
 endif()
 
 # Shaders
@@ -131,7 +131,7 @@ add_library(anari_webgpu_shaders STATIC frame/ShaderPrograms.cpp "${_sources_hea
                                         "${_wgsl_header}")
 target_include_directories(anari_webgpu_shaders PUBLIC "${CMAKE_CURRENT_LIST_DIR}"
                                                 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(anari_webgpu_shaders PUBLIC vtkSlang::vtkSlang)
+target_link_libraries(anari_webgpu_shaders PUBLIC SlangKit::SlangKit)
 
 add_executable(anari_webgpu_generate_wgsl tools/GenerateWGSL.cpp)
 target_link_libraries(anari_webgpu_generate_wgsl PRIVATE anari_webgpu_shaders)
@@ -162,7 +162,7 @@ add_library(
   world/Instance.cpp
   world/World.cpp)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE anari::helium vtkSlang::vtkSlang anari_webgpu_shaders)
+target_link_libraries(${PROJECT_NAME} PRIVATE anari::helium SlangKit::SlangKit anari_webgpu_shaders)
 
 # Link WebGPU
 if(EMSCRIPTEN)

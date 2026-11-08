@@ -39,17 +39,17 @@ int main(int argc, char **argv)
     }
   }
 
-  if (!vtkslang::vtkSlangCompiler::slangAvailable()) {
+  if (!slangkit::Compiler::slangAvailable()) {
     std::fprintf(stderr, "Slang is unavailable; the WGSL cannot be regenerated\n");
     return 77;
   }
 
-  vtkslang::vtkSlangCompiler compiler;
+  slangkit::Compiler compiler;
   int failures = 0;
   for (const std::string &name : anari_webgpu::shaderProgramNames()) {
-    vtkslang::Program program = anari_webgpu::shaderProgram(name);
+    slangkit::Program program = anari_webgpu::shaderProgram(name);
     program.precompiled.clear();
-    const vtkslang::Artifact a = compiler.compileProgram(program);
+    const slangkit::Artifact a = compiler.compileProgram(program);
     if (!a) {
       std::fprintf(stderr,
           "%s.slang failed to compile:\n%s",
@@ -59,8 +59,8 @@ int main(int argc, char **argv)
       continue;
     }
     const std::string text = "// Generated from shaders/" + name
-        + ".slang with its default specializations\n// by vtkSlang (Slang "
-        + vtkslang::vtkSlangCompiler::slangVersion()
+        + ".slang with its default specializations\n// by SlangKit (Slang "
+        + slangkit::Compiler::slangVersion()
         + "). Do not edit; regenerate with the\n// anari_webgpu_update_wgsl "
           "target.\n\n"
         + a.wgsl;

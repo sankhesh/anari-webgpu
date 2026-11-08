@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "vtkSlangCompiler.h"
+#include "SlangKitCompiler.h"
 
 #include <string>
 #include <vector>
@@ -12,6 +12,6 @@ namespace anari_webgpu {
 
 std::vector<std::string> shaderProgramNames();
 
-vtkslang::Program shaderProgram(const std::string &name);
+slangkit::Program shaderProgram(const std::string &name);
 
 } // namespace anari_webgpu

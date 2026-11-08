@@ -7,7 +7,7 @@
 #include "material/Material.h"
 #include "spatial_field/SpatialField.h"
 #include "volume/Volume.h"
-#include "vtkSlangWebGPU.h"
+#include "SlangKitWebGPU.h"
 // std
 #include <algorithm>
 #include <chrono>
@@ -186,9 +186,9 @@ static WGPUBindGroupLayoutEntry uniformEntry(uint32_t binding)
   return e;
 }
 
-static std::optional<vtkslang::HostValue> hostValue(const helium::AnariAny &value)
+static std::optional<slangkit::HostValue> hostValue(const helium::AnariAny &value)
 {
-  using vtkslang::ScalarType;
+  using slangkit::ScalarType;
   struct Shape
   {
     ANARIDataType type;
@@ -215,7 +215,7 @@ static std::optional<vtkslang::HostValue> hostValue(const helium::AnariAny &valu
   };
   for (const Shape &s : shapes)
     if (s.type == value.type())
-      return vtkslang::HostValue{s.scalar, s.width, s.runs, value.data()};
+      return slangkit::HostValue{s.scalar, s.width, s.runs, value.data()};
   return std::nullopt;
 }
 
@@ -330,17 +330,17 @@ void Frame::initComputeResources()
 
 WGPUShaderModule Frame::createBuiltinShader(WGPUDevice device, const char *name)
 {
-  vtkslang::Artifact artifact =
+  slangkit::Artifact artifact =
       m_slangCompiler.compileProgram(shaderProgram(name));
   if (!artifact) {
     reportMessage(ANARI_SEVERITY_ERROR,
-        "vtkSlang failed to compile '%s':\n%s",
+        "SlangKit failed to compile '%s':\n%s",
         name,
         artifact.diagnostics.c_str());
     return nullptr;
   }
   std::string label = std::string("anari_") + name;
-  return vtkslang::createShaderModule(device, artifact, label.c_str());
+  return slangkit::createShaderModule(device, artifact, label.c_str());
 }
 
 void Frame::reportOnce(ANARIStatusSeverity severity, const std::string &message)
@@ -364,7 +364,7 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
     return it->second.valid ? &it->second : nullptr;
   SlangPipelines &p = m_slangPipelines[key];
 
-  vtkslang::CompileOptions options;
+  slangkit::CompileOptions options;
   options.label = std::string("anari_slang_") + shader;
   if (!o.source.empty())
     options.modules.push_back(o.source);
@@ -380,7 +380,7 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
     options.specializations.emplace_back("IVertexModifier", o.vertexType);
   if (!o.hooksType.empty())
     options.specializations.emplace_back("IShaderHooks", o.hooksType);
-  vtkslang::Artifact artifact =
+  slangkit::Artifact artifact =
       m_slangCompiler.compileProgram(shaderProgram(shader), options);
   if (!artifact) {
     reportOnce(ANARI_SEVERITY_ERROR,
@@ -390,8 +390,8 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
             + artifact.diagnostics);
     return nullptr;
   }
-  p.plan = vtkslang::planBindings(
-      artifact, [](const vtkslang::ReflectedBinding &b) { return b.group == 0; });
+  p.plan = slangkit::planBindings(
+      artifact, [](const slangkit::ReflectedBinding &b) { return b.group == 0; });
   std::vector<std::string> refused;
   for (const auto &block : p.plan.blocks)
     if (block.binding != 0)
@@ -408,7 +408,7 @@ const Frame::SlangPipelines *Frame::slangPipelines(WGPUDevice device,
   }
 
   const std::string label = std::string("anari_slang_") + shader;
-  p.shader = vtkslang::createShaderModule(device, artifact, label.c_str());
+  p.shader = slangkit::createShaderModule(device, artifact, label.c_str());
   if (!p.shader)
     return nullptr;
   uint32_t groupCount = 1;
@@ -447,7 +447,7 @@ Frame::SlangBindGroups Frame::makeSlangBindGroups(WGPUDevice device,
   std::vector<std::string> names;
   for (const auto &parameter : o.parameters)
     names.push_back(parameter.first);
-  for (const std::string &name : vtkslang::unmatched(p->plan, names))
+  for (const std::string &name : slangkit::unmatched(p->plan, names))
     reportOnce(ANARI_SEVERITY_WARNING,
         "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name
             + "' does not match a field of the override types");
@@ -484,25 +484,25 @@ Frame::SlangBindGroups Frame::makeSlangBindGroups(WGPUDevice device,
 }
 
 std::vector<uint8_t> Frame::packSlangParameters(
-    const vtkslang::BindingPlan::Block &block, const SlangOverride &o)
+    const slangkit::BindingPlan::Block &block, const SlangOverride &o)
 {
-  std::vector<uint8_t> data = vtkslang::blockBytes(block);
+  std::vector<uint8_t> data = slangkit::blockBytes(block);
   for (const auto &[name, value] : o.parameters) {
-    const vtkslang::UniformField *field = vtkslang::findField(block, name);
+    const slangkit::UniformField *field = slangkit::findField(block, name);
     if (!field)
       continue;
     const std::string prefix = "WEBGPU_MATERIAL_SLANG: parameter 'slang." + name + "' ";
-    const std::optional<vtkslang::HostValue> host = hostValue(value);
+    const std::optional<slangkit::HostValue> host = hostValue(value);
     if (!host) {
       reportOnce(ANARI_SEVERITY_WARNING, prefix + "is not plain data");
       continue;
     }
     const std::string types = std::string("(") + anari::toString(value.type())
         + ") does not fit its field (" + field->type + ")";
-    switch (vtkslang::pack(*field, *host, data)) {
-    case vtkslang::PackStatus::Packed:
+    switch (slangkit::pack(*field, *host, data)) {
+    case slangkit::PackStatus::Packed:
       break;
-    case vtkslang::PackStatus::ScalarMismatch:
+    case slangkit::PackStatus::ScalarMismatch:
       reportOnce(ANARI_SEVERITY_WARNING, prefix + types + ": the scalar types differ");
       break;
     default:

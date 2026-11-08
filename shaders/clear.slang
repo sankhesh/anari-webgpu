@@ -1,7 +1,7 @@
 // Copyright 2026 The anari-webgpu Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import vtkslang_core;
+import slangkit_core;
 
 struct ClearUniforms
 {
