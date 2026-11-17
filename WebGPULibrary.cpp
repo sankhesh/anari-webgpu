@@ -4,6 +4,7 @@
 #include "WebGPUDevice.h"
 #include "anari/backend/LibraryImpl.h"
 #include "anari_library_webgpu_export.h"
+#include "anari_library_webgpu_queries.h"
 
 namespace anari_webgpu {
 
@@ -30,7 +31,7 @@ ANARIDevice WebGPULibrary::newDevice(const char * /*subtype*/)
 
 const char **WebGPULibrary::getDeviceExtensions(const char * /*deviceType*/)
 {
-  return nullptr;
+  return query_extensions();
 }
 
 } // namespace anari_webgpu

@@ -5,11 +5,16 @@
     "dependencies": [
       "anari_core_1_0",
       "anari_core_objects_base_1_0",
+      "khr_camera_perspective",
+      "khr_geometry_triangle",
       "khr_instance_transform",
+      "khr_light_directional",
       "khr_material_matte",
       "khr_material_physically_based",
-      "khr_geometry_spatial_field",
-      "khr_volume_transfer_function_1d",
+      "khr_renderer_ambient_light",
+      "khr_renderer_background_color",
+      "khr_spatial_field_structured_regular",
+      "khr_volume_transfer_function1d",
       "webgpu_material_slang"
     ]
   },
