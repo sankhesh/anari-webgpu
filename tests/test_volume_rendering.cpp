@@ -47,7 +47,7 @@ static void test_volume_with_transfer_function() {
   float tfColors[] = {0,0,1, 1,0,0}; float tfOpacities[] = {0.0f, 1.0f};
   ANARIArray1D colorArr = anariNewArray1D(dev, tfColors, 0, 0, ANARI_FLOAT32_VEC3, 2);
   ANARIArray1D opacArr = anariNewArray1D(dev, tfOpacities, 0, 0, ANARI_FLOAT32, 2);
-  anariSetParameter(dev, vol, "field", ANARI_SPATIAL_FIELD, &field);
+  anariSetParameter(dev, vol, "value", ANARI_SPATIAL_FIELD, &field);
   anariSetParameter(dev, vol, "color", ANARI_ARRAY1D, &colorArr);
   anariSetParameter(dev, vol, "opacity", ANARI_ARRAY1D, &opacArr);
   float valueRange[] = {0.0f, 1.0f};
@@ -84,7 +84,7 @@ static void test_volume_render_to_frame() {
   float tfC[]={0,0,1, 0,1,0, 1,1,0, 1,0,0}; float tfO[]={0.0f,0.2f,0.5f,1.0f};
   ANARIArray1D ca=anariNewArray1D(dev,tfC,0,0,ANARI_FLOAT32_VEC3,4);
   ANARIArray1D oa=anariNewArray1D(dev,tfO,0,0,ANARI_FLOAT32,4);
-  anariSetParameter(dev,vol,"field",ANARI_SPATIAL_FIELD,&field);
+  anariSetParameter(dev,vol,"value",ANARI_SPATIAL_FIELD,&field);
   anariSetParameter(dev,vol,"color",ANARI_ARRAY1D,&ca);
   anariSetParameter(dev,vol,"opacity",ANARI_ARRAY1D,&oa);
   anariCommitParameters(dev,vol);

@@ -338,7 +338,7 @@
       "name": "transferFunction1D",
       "parameters": [
         {
-          "name": "field",
+          "name": "value",
           "types": ["ANARI_SPATIAL_FIELD"],
           "tags": ["required"],
           "description": "the underlying structuredRegular scalar field"

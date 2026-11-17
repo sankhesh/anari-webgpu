@@ -99,7 +99,7 @@ int main()
       anariNewArray1D(dev, tfOpacity, 0, 0, ANARI_FLOAT32, TF_N);
 
   ANARIVolume vol = anariNewVolume(dev, "transferFunction1D");
-  anariSetParameter(dev, vol, "field", ANARI_SPATIAL_FIELD, &field);
+  anariSetParameter(dev, vol, "value", ANARI_SPATIAL_FIELD, &field);
   anariSetParameter(dev, vol, "color", ANARI_ARRAY1D, &colorArr);
   anariSetParameter(dev, vol, "opacity", ANARI_ARRAY1D, &opacArr);
   float valueRange[] = {0.f, 1.f};

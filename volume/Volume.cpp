@@ -35,7 +35,7 @@ void TransferFunction1DVolume::commitParameters()
 {
   Volume::commitParameters();
 
-  m_field = getParamObject<SpatialField>("field");
+  m_field = getParamObject<SpatialField>("value");
 
   m_color = getParamObject<Array1D>("color");
   m_opacity = getParamObject<Array1D>("opacity");
@@ -46,7 +46,7 @@ void TransferFunction1DVolume::commitParameters()
 
   if (!m_field) {
     reportMessage(ANARI_SEVERITY_WARNING,
-        "missing required parameter 'field' on transferFunction1D volume");
+        "missing required parameter 'value' on transferFunction1D volume");
   }
 }
 
