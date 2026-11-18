@@ -28,6 +28,25 @@ bool World::getProperty(const std::string_view &name,
     uint64_t size,
     uint32_t flags)
 {
+  if (name == "bounds" && type == ANARI_FLOAT32_BOX3) {
+    box3 b;
+    for (auto *inst : m_instances) {
+      const box3 gb = inst->group() ? inst->group()->bounds() : box3();
+      if (gb.lower.x > gb.upper.x)
+        continue;
+      for (int c = 0; c < 8; c++) {
+        const float4 corner((c & 1) ? gb.upper.x : gb.lower.x,
+            (c & 2) ? gb.upper.y : gb.lower.y,
+            (c & 4) ? gb.upper.z : gb.lower.z,
+            1.f);
+        b.extend(float3(linalg::mul(inst->xfm(), corner).xyz()));
+      }
+    }
+    if (b.lower.x > b.upper.x)
+      return false;
+    std::memcpy(ptr, &b, sizeof(b));
+    return true;
+  }
   return Object::getProperty(name, type, ptr, size, flags);
 }
 

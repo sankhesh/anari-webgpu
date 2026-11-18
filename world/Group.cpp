@@ -21,6 +21,13 @@ bool Group::getProperty(const std::string_view &name,
     uint64_t size,
     uint32_t flags)
 {
+  if (name == "bounds" && type == ANARI_FLOAT32_BOX3) {
+    const box3 b = bounds();
+    if (b.lower.x > b.upper.x)
+      return false;
+    std::memcpy(ptr, &b, sizeof(b));
+    return true;
+  }
   return Object::getProperty(name, type, ptr, size, flags);
 }
 
@@ -72,6 +79,35 @@ const std::vector<Volume *> &Group::volumes() const
 const std::vector<Light *> &Group::lights() const
 {
   return m_lights;
+}
+
+box3 Group::bounds() const
+{
+  box3 b;
+  for (auto *s : m_surfaces) {
+    auto *geom =
+        s ? dynamic_cast<const TriangleGeometry *>(s->geometry()) : nullptr;
+    if (!geom || !geom->isValid())
+      continue;
+    const float *p = geom->vertexPositions();
+    const uint32_t *idx = geom->indices();
+    const uint32_t nv = geom->numVertices();
+    const uint32_t n = idx ? geom->numTriangles() * 3 : nv;
+    for (uint32_t i = 0; i < n; i++) {
+      const uint32_t v = idx ? idx[i] : i;
+      if (v < nv)
+        b.extend(float3(p[v * 3], p[v * 3 + 1], p[v * 3 + 2]));
+    }
+  }
+  for (auto *v : m_volumes) {
+    auto *vol = dynamic_cast<const TransferFunction1DVolume *>(v);
+    auto *field = vol && vol->isValid() ? vol->field() : nullptr;
+    if (field) {
+      b.extend(field->worldMin());
+      b.extend(field->worldMax());
+    }
+  }
+  return b;
 }
 
 } // namespace anari_webgpu

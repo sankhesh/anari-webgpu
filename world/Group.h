@@ -28,6 +28,8 @@ struct Group : public Object
   const std::vector<Volume *> &volumes() const;
   const std::vector<Light *> &lights() const;
 
+  box3 bounds() const;
+
  private:
   helium::ChangeObserverPtr<ObjectArray> m_surfaceData;
   std::vector<Surface *> m_surfaces;
