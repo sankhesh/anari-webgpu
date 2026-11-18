@@ -14,7 +14,7 @@ struct TestScene {
   ANARIDevice device; ANARIWorld world; ANARICamera camera; ANARIRenderer renderer; ANARIFrame frame; int width, height;
 };
 
-static TestScene createBasicTriangleScene(int w, int h) {
+static TestScene createBasicTriangleScene(int w, int h, ANARIDataType vertexColorType = ANARI_FLOAT32_VEC4, const void *vertexColorData = nullptr, bool colorAttribute = true) {
   TestScene s{}; s.width = w; s.height = h;
   ANARILibrary lib = anariLoadLibrary("webgpu", statusFunc, nullptr); assert(lib);
   s.device = anariNewDevice(lib, "default"); assert(s.device);
@@ -22,7 +22,7 @@ static TestScene createBasicTriangleScene(int w, int h) {
   float colors[] = {1,0,0,1, 0,1,0,1, 0,0,1,1};
   float normals[] = {0,0,1, 0,0,1, 0,0,1};
   ANARIArray1D posArr = anariNewArray1D(s.device, vertices, 0, 0, ANARI_FLOAT32_VEC3, 3);
-  ANARIArray1D colArr = anariNewArray1D(s.device, colors, 0, 0, ANARI_FLOAT32_VEC4, 3);
+  ANARIArray1D colArr = anariNewArray1D(s.device, vertexColorData ? vertexColorData : colors, 0, 0, vertexColorType, 3);
   ANARIArray1D normArr = anariNewArray1D(s.device, normals, 0, 0, ANARI_FLOAT32_VEC3, 3);
   ANARIGeometry geom = anariNewGeometry(s.device, "triangle");
   anariSetParameter(s.device, geom, "vertex.position", ANARI_ARRAY1D, &posArr);
@@ -30,7 +30,9 @@ static TestScene createBasicTriangleScene(int w, int h) {
   anariSetParameter(s.device, geom, "vertex.normal", ANARI_ARRAY1D, &normArr);
   anariCommitParameters(s.device, geom);
   ANARIMaterial mat = anariNewMaterial(s.device, "matte");
-  float matColor[] = {1,1,1,1}; anariSetParameter(s.device, mat, "color", ANARI_FLOAT32_VEC4, matColor);
+  float matColor[] = {1,1,1,1};
+  if (colorAttribute) anariSetParameter(s.device, mat, "color", ANARI_STRING, "color");
+  else anariSetParameter(s.device, mat, "color", ANARI_FLOAT32_VEC4, matColor);
   anariCommitParameters(s.device, mat);
   ANARISurface surf = anariNewSurface(s.device);
   anariSetParameter(s.device, surf, "geometry", ANARI_GEOMETRY, &geom);
@@ -112,6 +114,22 @@ static void test_depth_buffer() {
   } else printf(" (depth not available)");
   destroyScene(s); printf(" PASSED\n");
 }
+static void test_vertex_color_types() {
+  printf("  test_vertex_color_types...");
+  const float red3[] = {1,0,0, 1,0,0, 1,0,0};
+  const uint8_t red8[] = {255,0,0,255, 255,0,0,255, 255,0,0,255};
+  struct { ANARIDataType type; const void *data; bool attribute; } cases[] = {
+    {ANARI_FLOAT32_VEC3, red3, true}, {ANARI_UFIXED8_VEC4, red8, true}, {ANARI_FLOAT32_VEC3, red3, false}};
+  for (auto &c : cases) { TestScene s = createBasicTriangleScene(64, 64, c.type, c.data, c.attribute);
+    anariRenderFrame(s.device, s.frame); anariFrameReady(s.device, s.frame, ANARI_WAIT);
+    uint32_t fbW, fbH; ANARIDataType fbType;
+    const uint8_t *px = (const uint8_t *)anariMapFrame(s.device, s.frame, "channel.color", &fbW, &fbH, &fbType);
+    assert(px); const uint8_t *p = px + ((fbH/2)*fbW + fbW/2)*4;
+    if (c.attribute) assert(p[0] > 128 && p[1] == 0 && p[2] == 0);
+    else assert(p[0] > 128 && p[1] == p[0] && p[2] == p[0]);
+    anariUnmapFrame(s.device, s.frame, "channel.color"); destroyScene(s);
+  } printf(" PASSED\n");
+}
 static void test_resolution_variants() {
   printf("  test_resolution_variants...");
   int sizes[][2] = {{16,16},{100,100},{256,128},{1,1}};
@@ -125,6 +143,6 @@ static void test_resolution_variants() {
 }
 int main() {
   printf("=== Triangle Rendering Tests ===\n");
-  test_framebuffer_valid(); test_triangle_visible(); test_depth_buffer(); test_resolution_variants();
+  test_framebuffer_valid(); test_triangle_visible(); test_depth_buffer(); test_vertex_color_types(); test_resolution_variants();
   printf("All triangle rendering tests passed.\n"); return 0;
 }

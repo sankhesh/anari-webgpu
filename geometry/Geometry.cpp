@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "Geometry.h"
+// std
+#include <algorithm>
 
 namespace anari_webgpu {
 
@@ -48,9 +50,16 @@ uint32_t TriangleGeometry::numVertices() const
   return m_vertex_position ? (uint32_t)m_vertex_position->totalSize() : 0;
 }
 
-const float *TriangleGeometry::vertexColors() const
+std::vector<float4> TriangleGeometry::vertexColors() const
 {
-  return m_vertex_color ? (const float *)m_vertex_color->data() : nullptr;
+  std::vector<float4> colors(numVertices(), DEFAULT_ATTRIBUTE_VALUE);
+  if (m_vertex_color) {
+    const size_t n = std::min(colors.size(), m_vertex_color->size());
+    for (size_t i = 0; i < n; i++)
+      colors[i] = readAsAttributeValueFlat(
+          m_vertex_color->begin(), m_vertex_color->elementType(), i);
+  }
+  return colors;
 }
 
 const float *TriangleGeometry::vertexNormals() const

@@ -47,8 +47,11 @@ MatteMaterial::MatteMaterial(WebGPUDeviceGlobalState *s) : Material(s) {}
 
 void MatteMaterial::commitParameters()
 {
+  m_usesColorAttribute = getParamString("color", "") == "color";
   float3 color3;
-  if (getParam("color", ANARI_FLOAT32_VEC3, &color3))
+  if (m_usesColorAttribute)
+    m_color = float4(1.f, 1.f, 1.f, 1.f);
+  else if (getParam("color", ANARI_FLOAT32_VEC3, &color3))
     m_color = float4(color3, 1.f);
   else
     m_color = getParam<float4>("color", float4(0.8f, 0.8f, 0.8f, 1.f));
@@ -117,7 +120,10 @@ PhysicallyBasedMaterial::PhysicallyBasedMaterial(WebGPUDeviceGlobalState *s)
 
 void PhysicallyBasedMaterial::commitParameters()
 {
-  {
+  m_usesColorAttribute = getParamString("baseColor", "") == "color";
+  if (m_usesColorAttribute) {
+    m_baseColor = float4(1.f, 1.f, 1.f, 1.f);
+  } else {
     float4 tryVec4 = getParam<float4>("baseColor", float4(-1.f, -1.f, -1.f, -1.f));
     if (tryVec4.x >= 0.f) {
       m_baseColor = tryVec4;

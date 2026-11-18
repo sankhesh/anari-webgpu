@@ -38,9 +38,12 @@ struct Material : public Object
       std::string_view subtype, WebGPUDeviceGlobalState *s);
 
   const SlangOverride &slangOverride() const { return m_slangOverride; }
+  bool usesColorAttribute() const { return m_usesColorAttribute; }
 
  protected:
   void commitSlangParameters();
+
+  bool m_usesColorAttribute{false};
 
  private:
   SlangOverride m_slangOverride;

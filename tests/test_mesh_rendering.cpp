@@ -113,7 +113,8 @@ static void test_vertex_colored_mesh() {
   anariSetParameter(dev,geom,"vertex.color",ANARI_ARRAY1D,&ca);
   anariSetParameter(dev,geom,"primitive.index",ANARI_ARRAY1D,&ia);
   anariCommitParameters(dev,geom);
-  ANARIMaterial mat=anariNewMaterial(dev,"matte"); anariCommitParameters(dev,mat);
+  ANARIMaterial mat=anariNewMaterial(dev,"matte");
+  anariSetParameter(dev,mat,"color",ANARI_STRING,"color"); anariCommitParameters(dev,mat);
   ANARISurface surf=anariNewSurface(dev);
   anariSetParameter(dev,surf,"geometry",ANARI_GEOMETRY,&geom);
   anariSetParameter(dev,surf,"material",ANARI_MATERIAL,&mat);

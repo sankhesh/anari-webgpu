@@ -707,8 +707,11 @@ void Frame::renderFrame()
             uint32_t numTris  = geom->numTriangles();
             const float    *pos  = geom->vertexPositions();
             const float    *norm = geom->vertexNormals();
-            const float    *col  = geom->vertexColors();
             const uint32_t *idx  = geom->indices();
+            std::vector<float4> colors;
+            if (surf->material() && surf->material()->usesColorAttribute())
+              colors = geom->vertexColors();
+            const float    *col  = colors.empty() ? nullptr : &colors[0].x;
 
             std::vector<uint32_t> indexData;
             if (idx) {
@@ -1133,8 +1136,11 @@ void Frame::softwareRasterize()
 
       const float    *positions = geom->vertexPositions();
       const float    *normals   = geom->vertexNormals();
-      const float    *colors    = geom->vertexColors();
       const float    *texcoords = geom->vertexTexCoords();
+      std::vector<float4> vertexColors;
+      if (surf->material() && surf->material()->usesColorAttribute())
+        vertexColors = geom->vertexColors();
+      const float    *colors    = vertexColors.empty() ? nullptr : &vertexColors[0].x;
       const uint32_t *indices   = geom->indices();
       uint32_t numTris          = geom->numTriangles();
 

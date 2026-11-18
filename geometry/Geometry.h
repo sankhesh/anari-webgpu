@@ -26,7 +26,7 @@ struct TriangleGeometry : public Geometry
 
   const float *vertexPositions() const;
   uint32_t numVertices() const;
-  const float *vertexColors() const;
+  std::vector<float4> vertexColors() const;
   const float *vertexNormals() const;
   const float *vertexTexCoords() const;
   const uint32_t *indices() const;

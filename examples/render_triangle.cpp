@@ -143,8 +143,7 @@ int main(int argc, const char *argv[]) {
 
   // Create matte material
   ANARIMaterial material = anariNewMaterial(device, "matte");
-  float matColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
-  anariSetParameter(device, material, "color", ANARI_FLOAT32_VEC4, matColor);
+  anariSetParameter(device, material, "color", ANARI_STRING, "color");
   anariCommitParameters(device, material);
 
   // Create surface (geometry + material)

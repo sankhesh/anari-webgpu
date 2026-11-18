@@ -734,8 +734,7 @@ int main(int argc, char **argv)
   anariCommitParameters(device, wallGeom);
 
   ANARIMaterial wallMat = anariNewMaterial(device, "matte");
-  float white[] = {1.f, 1.f, 1.f, 1.f};
-  anariSetParameter(device, wallMat, "color", ANARI_FLOAT32_VEC4, white);
+  anariSetParameter(device, wallMat, "color", ANARI_STRING, "color");
   anariCommitParameters(device, wallMat);
 
   ANARISurface wallSurface = anariNewSurface(device);

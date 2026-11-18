@@ -148,8 +148,7 @@ int main() {
   anariCommitParameters(device, geom);
   
   ANARIMaterial mat = anariNewMaterial(device, "matte");
-  float matColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
-  anariSetParameter(device, mat, "color", ANARI_FLOAT32_VEC4, matColor);
+  anariSetParameter(device, mat, "color", ANARI_STRING, "color");
   anariCommitParameters(device, mat);
   
   ANARISurface surface = anariNewSurface(device);
