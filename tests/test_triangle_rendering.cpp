@@ -14,7 +14,7 @@ struct TestScene {
   ANARIDevice device; ANARIWorld world; ANARICamera camera; ANARIRenderer renderer; ANARIFrame frame; int width, height;
 };
 
-static TestScene createBasicTriangleScene(int w, int h, ANARIDataType vertexColorType = ANARI_FLOAT32_VEC4, const void *vertexColorData = nullptr, bool colorAttribute = true) {
+static TestScene createBasicTriangleScene(int w, int h, ANARIDataType colorArrayType = ANARI_FLOAT32_VEC4, const void *colorArrayData = nullptr, bool colorAttribute = true, const char *colorParam = "vertex.color") {
   TestScene s{}; s.width = w; s.height = h;
   ANARILibrary lib = anariLoadLibrary("webgpu", statusFunc, nullptr); assert(lib);
   s.device = anariNewDevice(lib, "default"); assert(s.device);
@@ -22,11 +22,12 @@ static TestScene createBasicTriangleScene(int w, int h, ANARIDataType vertexColo
   float colors[] = {1,0,0,1, 0,1,0,1, 0,0,1,1};
   float normals[] = {0,0,1, 0,0,1, 0,0,1};
   ANARIArray1D posArr = anariNewArray1D(s.device, vertices, 0, 0, ANARI_FLOAT32_VEC3, 3);
-  ANARIArray1D colArr = anariNewArray1D(s.device, vertexColorData ? vertexColorData : colors, 0, 0, vertexColorType, 3);
+  const uint64_t colorCount = std::strcmp(colorParam, "primitive.color") == 0 ? 1 : 3;
+  ANARIArray1D colArr = anariNewArray1D(s.device, colorArrayData ? colorArrayData : colors, 0, 0, colorArrayType, colorCount);
   ANARIArray1D normArr = anariNewArray1D(s.device, normals, 0, 0, ANARI_FLOAT32_VEC3, 3);
   ANARIGeometry geom = anariNewGeometry(s.device, "triangle");
   anariSetParameter(s.device, geom, "vertex.position", ANARI_ARRAY1D, &posArr);
-  anariSetParameter(s.device, geom, "vertex.color", ANARI_ARRAY1D, &colArr);
+  anariSetParameter(s.device, geom, colorParam, ANARI_ARRAY1D, &colArr);
   anariSetParameter(s.device, geom, "vertex.normal", ANARI_ARRAY1D, &normArr);
   anariCommitParameters(s.device, geom);
   ANARIMaterial mat = anariNewMaterial(s.device, "matte");
@@ -118,9 +119,10 @@ static void test_vertex_color_types() {
   printf("  test_vertex_color_types...");
   const float red3[] = {1,0,0, 1,0,0, 1,0,0};
   const uint8_t red8[] = {255,0,0,255, 255,0,0,255, 255,0,0,255};
-  struct { ANARIDataType type; const void *data; bool attribute; } cases[] = {
-    {ANARI_FLOAT32_VEC3, red3, true}, {ANARI_UFIXED8_VEC4, red8, true}, {ANARI_FLOAT32_VEC3, red3, false}};
-  for (auto &c : cases) { TestScene s = createBasicTriangleScene(64, 64, c.type, c.data, c.attribute);
+  struct { ANARIDataType type; const void *data; bool attribute; const char *param; } cases[] = {
+    {ANARI_FLOAT32_VEC3, red3, true, "vertex.color"}, {ANARI_UFIXED8_VEC4, red8, true, "vertex.color"},
+    {ANARI_FLOAT32_VEC3, red3, true, "primitive.color"}, {ANARI_FLOAT32_VEC3, red3, false, "vertex.color"}};
+  for (auto &c : cases) { TestScene s = createBasicTriangleScene(64, 64, c.type, c.data, c.attribute, c.param);
     anariRenderFrame(s.device, s.frame); anariFrameReady(s.device, s.frame, ANARI_WAIT);
     uint32_t fbW, fbH; ANARIDataType fbType;
     const uint8_t *px = (const uint8_t *)anariMapFrame(s.device, s.frame, "channel.color", &fbW, &fbH, &fbType);

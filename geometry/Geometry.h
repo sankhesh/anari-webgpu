@@ -27,6 +27,8 @@ struct TriangleGeometry : public Geometry
   const float *vertexPositions() const;
   uint32_t numVertices() const;
   std::vector<float4> vertexColors() const;
+  std::vector<float4> primitiveColors() const;
+  bool colorsPerPrimitive() const;
   const float *vertexNormals() const;
   const float *vertexTexCoords() const;
   const uint32_t *indices() const;
@@ -36,6 +38,7 @@ struct TriangleGeometry : public Geometry
  private:
   helium::IntrusivePtr<Array1D> m_vertex_position;
   helium::IntrusivePtr<Array1D> m_vertex_color;
+  helium::IntrusivePtr<Array1D> m_primitive_color;
   helium::IntrusivePtr<Array1D> m_vertex_normal;
   helium::IntrusivePtr<Array1D> m_vertex_attribute0;
   helium::IntrusivePtr<Array1D> m_index;

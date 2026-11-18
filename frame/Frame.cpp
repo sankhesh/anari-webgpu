@@ -708,9 +708,10 @@ void Frame::renderFrame()
             const float    *pos  = geom->vertexPositions();
             const float    *norm = geom->vertexNormals();
             const uint32_t *idx  = geom->indices();
+            const bool perPrimitive = geom->colorsPerPrimitive();
             std::vector<float4> colors;
             if (surf->material() && surf->material()->usesColorAttribute())
-              colors = geom->vertexColors();
+              colors = perPrimitive ? geom->primitiveColors() : geom->vertexColors();
             const float    *col  = colors.empty() ? nullptr : &colors[0].x;
 
             std::vector<uint32_t> indexData;
@@ -726,7 +727,7 @@ void Frame::renderFrame()
 
             uint64_t posSize  = numVerts * 3 * sizeof(float);
             uint64_t normSize = norm ? numVerts * 3 * sizeof(float) : sizeof(dummyNorm);
-            uint64_t colSize  = col  ? numVerts * 4 * sizeof(float) : sizeof(dummyCol);
+            uint64_t colSize  = col  ? colors.size() * sizeof(float4) : sizeof(dummyCol);
             uint64_t idxSize  = indexData.size() * sizeof(uint32_t);
 
             WGPUBuffer posBuf  = uploadStorage(device, queue, pos, posSize, "pos");
@@ -764,7 +765,7 @@ void Frame::renderFrame()
               pu.lightIrradiance=lightIrr;
               pu.width=m_size.x; pu.height=m_size.y;
               pu.numTriangles=numTris;
-              pu.hasNormals=norm?1:0; pu.hasColors=col?1:0;
+              pu.hasNormals=norm?1:0; pu.hasColors=col?(perPrimitive?2:1):0;
               pu.alphaMode   = static_cast<uint32_t>(pbrMat->alphaMode());
               pu.alphaCutoff = pbrMat->alphaCutoff();
 
@@ -837,7 +838,7 @@ void Frame::renderFrame()
               ru.ambientRadiance=ambientRad;
               ru.width=m_size.x; ru.height=m_size.y;
               ru.numTriangles=numTris;
-              ru.hasNormals=norm?1:0; ru.hasColors=col?1:0;
+              ru.hasNormals=norm?1:0; ru.hasColors=col?(perPrimitive?2:1):0;
 
               WGPUBuffer ub = uploadUniform(device, queue, &ru, sizeof(ru));
 
@@ -1137,10 +1138,11 @@ void Frame::softwareRasterize()
       const float    *positions = geom->vertexPositions();
       const float    *normals   = geom->vertexNormals();
       const float    *texcoords = geom->vertexTexCoords();
-      std::vector<float4> vertexColors;
+      const bool perPrimitive = geom->colorsPerPrimitive();
+      std::vector<float4> attributeColors;
       if (surf->material() && surf->material()->usesColorAttribute())
-        vertexColors = geom->vertexColors();
-      const float    *colors    = vertexColors.empty() ? nullptr : &vertexColors[0].x;
+        attributeColors = perPrimitive ? geom->primitiveColors() : geom->vertexColors();
+      const float    *colors    = attributeColors.empty() ? nullptr : &attributeColors[0].x;
       const uint32_t *indices   = geom->indices();
       uint32_t numTris          = geom->numTriangles();
 
@@ -1177,23 +1179,26 @@ void Frame::softwareRasterize()
           uv2={texcoords[i2*2], texcoords[i2*2+1]};
         }
 
+        const uint32_t j0 = perPrimitive ? t : i0;
+        const uint32_t j1 = perPrimitive ? t : i1;
+        const uint32_t j2 = perPrimitive ? t : i2;
         float4 c0, c1, c2;
         if (pbrMat) {
           float4 bc = pbrMat->baseColor();
           c0=c1=c2=bc;
           if (colors) {
-            float4 vc0{colors[i0*4],colors[i0*4+1],colors[i0*4+2],colors[i0*4+3]};
-            float4 vc1{colors[i1*4],colors[i1*4+1],colors[i1*4+2],colors[i1*4+3]};
-            float4 vc2{colors[i2*4],colors[i2*4+1],colors[i2*4+2],colors[i2*4+3]};
+            float4 vc0{colors[j0*4],colors[j0*4+1],colors[j0*4+2],colors[j0*4+3]};
+            float4 vc1{colors[j1*4],colors[j1*4+1],colors[j1*4+2],colors[j1*4+3]};
+            float4 vc2{colors[j2*4],colors[j2*4+1],colors[j2*4+2],colors[j2*4+3]};
             c0=bc*vc0; c1=bc*vc1; c2=bc*vc2;
           }
         } else {
           float4 mc = matteMat ? matteMat->color() : float4(0.8f,0.8f,0.8f,1.f);
           c0=c1=c2=mc;
           if (colors) {
-            float4 vc0{colors[i0*4],colors[i0*4+1],colors[i0*4+2],colors[i0*4+3]};
-            float4 vc1{colors[i1*4],colors[i1*4+1],colors[i1*4+2],colors[i1*4+3]};
-            float4 vc2{colors[i2*4],colors[i2*4+1],colors[i2*4+2],colors[i2*4+3]};
+            float4 vc0{colors[j0*4],colors[j0*4+1],colors[j0*4+2],colors[j0*4+3]};
+            float4 vc1{colors[j1*4],colors[j1*4+1],colors[j1*4+2],colors[j1*4+3]};
+            float4 vc2{colors[j2*4],colors[j2*4+1],colors[j2*4+2],colors[j2*4+3]};
             c0=mc*vc0; c1=mc*vc1; c2=mc*vc2;
           }
         }

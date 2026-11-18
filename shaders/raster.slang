@@ -59,7 +59,7 @@ VertexSample fetchVertex(uint triIdx, uint idx, out VertexContext c)
     if (params.hasNormals != 0u)
         v.normal  = getNormal(idx);
     if (params.hasColors != 0u)
-        v.color   = getColor(idx);
+        v.color   = getColor(params.hasColors == 2u ? triIdx : idx);
     v.pointId     = idx;
     v.cellId      = triIdx;
     v.primitiveId = triIdx;

@@ -25,6 +25,7 @@ void TriangleGeometry::commitParameters()
 {
   m_vertex_position = getParamObject<Array1D>("vertex.position");
   m_vertex_color = getParamObject<Array1D>("vertex.color");
+  m_primitive_color = getParamObject<Array1D>("primitive.color");
   m_vertex_normal = getParamObject<Array1D>("vertex.normal");
   m_vertex_attribute0 = getParamObject<Array1D>("vertex.attribute0");
   m_index = getParamObject<Array1D>("primitive.index");
@@ -50,16 +51,31 @@ uint32_t TriangleGeometry::numVertices() const
   return m_vertex_position ? (uint32_t)m_vertex_position->totalSize() : 0;
 }
 
-std::vector<float4> TriangleGeometry::vertexColors() const
+static std::vector<float4> readColors(const Array1D *array, size_t count)
 {
-  std::vector<float4> colors(numVertices(), DEFAULT_ATTRIBUTE_VALUE);
-  if (m_vertex_color) {
-    const size_t n = std::min(colors.size(), m_vertex_color->size());
+  std::vector<float4> colors(count, DEFAULT_ATTRIBUTE_VALUE);
+  if (array) {
+    const size_t n = std::min(count, array->size());
     for (size_t i = 0; i < n; i++)
-      colors[i] = readAsAttributeValueFlat(
-          m_vertex_color->begin(), m_vertex_color->elementType(), i);
+      colors[i] =
+          readAsAttributeValueFlat(array->begin(), array->elementType(), i);
   }
   return colors;
+}
+
+std::vector<float4> TriangleGeometry::vertexColors() const
+{
+  return readColors(m_vertex_color.ptr, numVertices());
+}
+
+std::vector<float4> TriangleGeometry::primitiveColors() const
+{
+  return readColors(m_primitive_color.ptr, numTriangles());
+}
+
+bool TriangleGeometry::colorsPerPrimitive() const
+{
+  return !m_vertex_color && m_primitive_color;
 }
 
 const float *TriangleGeometry::vertexNormals() const

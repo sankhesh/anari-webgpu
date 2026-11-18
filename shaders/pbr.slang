@@ -63,7 +63,7 @@ VertexSample pbr_fetchVertex(uint triIdx, uint idx, out VertexContext c)
     if (params.hasNormals != 0u)
         v.normal  = pbr_getNorm(idx);
     if (params.hasColors != 0u)
-        v.color   = pbr_getColor(idx);
+        v.color   = pbr_getColor(params.hasColors == 2u ? triIdx : idx);
     v.pointId     = idx;
     v.cellId      = triIdx;
     v.primitiveId = triIdx;
