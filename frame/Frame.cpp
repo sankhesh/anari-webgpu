@@ -670,28 +670,9 @@ void Frame::renderFrame()
       {
         auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
         float aspect = float(m_size.x) / float(m_size.y);
-        float fovy = cam ? cam->fovy() : float(M_PI / 3.0);
-        float3 eye = cam ? cam->position() : float3(0,0,5);
-        float3 dir = cam ? cam->direction() : float3(0,0,-1);
-        float3 up  = cam ? cam->up() : float3(0,1,0);
-
-        float3 f = linalg::normalize(dir);
-        float3 s = linalg::normalize(linalg::cross(f, up));
-        float3 u = linalg::cross(s, f);
-
-        mat4 view;
-        view[0] = {s.x, u.x, -f.x, 0.f};
-        view[1] = {s.y, u.y, -f.y, 0.f};
-        view[2] = {s.z, u.z, -f.z, 0.f};
-        view[3] = {-linalg::dot(s,eye), -linalg::dot(u,eye), linalg::dot(f,eye), 1.f};
-
-        float th = std::tan(fovy / 2.f), near = 0.1f, far = 1000.f;
-        mat4 proj;
-        proj[0] = {1.f/(aspect*th), 0, 0, 0};
-        proj[1] = {0, 1.f/th, 0, 0};
-        proj[2] = {0, 0, far/(near-far), -1.f};
-        proj[3] = {0, 0, (far*near)/(near-far), 0};
-        mat4 vp = linalg::mul(proj, view);
+        mat4 vp = cam ? linalg::mul(cam->projectionMatrix(aspect, 0.1f, 1000.f),
+                            cam->viewMatrix())
+                      : mat4(linalg::identity);
 
         float3 lightDir{0.f, -1.f, -1.f};
         float3 lightColor{1.f, 1.f, 1.f};
@@ -937,28 +918,11 @@ void Frame::renderFrame()
 
           auto *cam2 = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
           float aspect2 = float(m_size.x) / float(m_size.y);
-          float fovy2 = cam2 ? cam2->fovy() : float(M_PI/3.0);
-          float3 eye2 = cam2 ? cam2->position() : float3(0,0,5);
-          float3 dir2 = cam2 ? cam2->direction() : float3(0,0,-1);
-          float3 up2  = cam2 ? cam2->up() : float3(0,1,0);
-
-          float3 ff = linalg::normalize(dir2);
-          float3 ss = linalg::normalize(linalg::cross(ff, up2));
-          float3 uu = linalg::cross(ss, ff);
-          mat4 view2;
-          view2[0] = {ss.x, uu.x, -ff.x, 0.f};
-          view2[1] = {ss.y, uu.y, -ff.y, 0.f};
-          view2[2] = {ss.z, uu.z, -ff.z, 0.f};
-          view2[3] = {-linalg::dot(ss,eye2),-linalg::dot(uu,eye2),linalg::dot(ff,eye2),1.f};
-          mat4 viewInv = linalg::inverse(view2);
-
-          float th2 = std::tan(fovy2/2.f), near2=0.1f, far2=1000.f;
-          mat4 proj2;
-          proj2[0]={1.f/(aspect2*th2),0,0,0};
-          proj2[1]={0,1.f/th2,0,0};
-          proj2[2]={0,0,far2/(near2-far2),-1.f};
-          proj2[3]={0,0,(far2*near2)/(near2-far2),0};
-          mat4 projInv = linalg::inverse(proj2);
+          mat4 viewInv = cam2 ? linalg::inverse(cam2->viewMatrix())
+                              : mat4(linalg::identity);
+          mat4 projInv = cam2
+              ? linalg::inverse(cam2->projectionMatrix(aspect2, 0.1f, 1000.f))
+              : mat4(linalg::identity);
 
           struct VolumeUniforms {
             float viewInv[16];
@@ -1097,26 +1061,8 @@ void Frame::softwareRasterize()
     return;
 
   float aspect = float(m_size.x) / float(m_size.y);
-  float fovy = cam->fovy();
-  float3 eye = cam->position(), dir = cam->direction(), up = cam->up();
-
-  float3 f = linalg::normalize(dir);
-  float3 s = linalg::normalize(linalg::cross(f, up));
-  float3 u = linalg::cross(s, f);
-
-  mat4 view;
-  view[0] = {s.x, u.x, -f.x, 0.f};
-  view[1] = {s.y, u.y, -f.y, 0.f};
-  view[2] = {s.z, u.z, -f.z, 0.f};
-  view[3] = {-linalg::dot(s,eye), -linalg::dot(u,eye), linalg::dot(f,eye), 1.f};
-
-  float th = std::tan(fovy/2.f), near = 0.1f, far = 1000.f;
-  mat4 proj;
-  proj[0] = {1.f/(aspect*th), 0, 0, 0};
-  proj[1] = {0, 1.f/th, 0, 0};
-  proj[2] = {0, 0, far/(near-far), -1.f};
-  proj[3] = {0, 0, (far*near)/(near-far), 0};
-  mat4 vp = linalg::mul(proj, view);
+  mat4 vp = linalg::mul(
+      cam->projectionMatrix(aspect, 0.1f, 1000.f), cam->viewMatrix());
 
   float3 lightDir = linalg::normalize(float3(0.f,-1.f,-1.f));
   float3 lightColor{1.f,1.f,1.f};
@@ -1357,24 +1303,9 @@ void Frame::softwareRaymarchVolume()
     return;
 
   float aspect = float(m_size.x) / float(m_size.y);
-  float fovy   = cam->fovy();
-  float3 eye = cam->position(), dir = cam->direction(), up = cam->up();
-
-  float3 f = linalg::normalize(dir);
-  float3 s = linalg::normalize(linalg::cross(f, up));
-  float3 u = linalg::cross(s, f);
-
-  mat4 view;
-  view[0]={s.x,u.x,-f.x,0.f}; view[1]={s.y,u.y,-f.y,0.f};
-  view[2]={s.z,u.z,-f.z,0.f};
-  view[3]={-linalg::dot(s,eye),-linalg::dot(u,eye),linalg::dot(f,eye),1.f};
-  mat4 viewInv = linalg::inverse(view);
-
-  float th=std::tan(fovy/2.f), near=0.1f, far=1000.f;
-  mat4 proj;
-  proj[0]={1.f/(aspect*th),0,0,0}; proj[1]={0,1.f/th,0,0};
-  proj[2]={0,0,far/(near-far),-1.f}; proj[3]={0,0,(far*near)/(near-far),0};
-  mat4 projInv = linalg::inverse(proj);
+  float3 eye = cam->position();
+  mat4 viewInv = linalg::inverse(cam->viewMatrix());
+  mat4 projInv = linalg::inverse(cam->projectionMatrix(aspect, 0.1f, 1000.f));
 
   auto unproject = [&](int px, int py) -> float3 {
     float ndcX = (px + 0.5f) / float(m_size.x) * 2.f - 1.f;
