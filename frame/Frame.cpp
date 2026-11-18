@@ -1249,7 +1249,7 @@ void Frame::softwareRasterize()
             if (depth >= m_zBuffer[idx]) continue;
             m_zBuffer[idx] = depth;
             if (!m_depthBuffer.empty())
-              m_depthBuffer[idx] = depth;
+              m_depthBuffer[outputIndex(px, py)] = depth;
 
             float2 uv{uv0.x*w0+uv1.x*w1+uv2.x*w2, uv0.y*w0+uv1.y*w1+uv2.y*w2};
             float3 N = linalg::normalize(n0*w0 + n1*w1 + n2*w2);
@@ -1437,7 +1437,7 @@ void Frame::softwareRaymarchVolume()
 
           if (accAlpha < 0.001f) continue;
 
-          uint32_t idx = py*m_size.x + px;
+          uint32_t idx = outputIndex(px, py);
           const auto *cpx = m_pixelBuffer.data() + idx*m_perPixelBytes;
           float4 geomCol{0,0,0,0};
           if (m_colorType == ANARI_FLOAT32_VEC4) {
@@ -1483,9 +1483,14 @@ void Frame::discard() {}
 bool Frame::ready() const { return true; }
 void Frame::wait() const {}
 
+uint32_t Frame::outputIndex(int x, int y) const
+{
+  return (m_size.y - 1 - y) * m_size.x + x;
+}
+
 void Frame::writeSample(int x, int y, const PixelSample &s)
 {
-  const auto idx = y * m_size.x + x;
+  const auto idx = outputIndex(x, y);
   auto *color = m_pixelBuffer.data() + (idx * m_perPixelBytes);
   switch (m_colorType) {
   case ANARI_UFIXED8_VEC4: {

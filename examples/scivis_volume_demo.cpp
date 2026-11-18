@@ -24,7 +24,7 @@ static void savePPM(
   fprintf(f, "P6\n%d %d\n255\n", width, height);
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
-      const uint8_t *p = pixels + (y * width + x) * 4;
+      const uint8_t *p = pixels + ((height - 1 - y) * width + x) * 4;
       fwrite(p, 1, 3, f);
     }
   }

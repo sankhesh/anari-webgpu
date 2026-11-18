@@ -42,8 +42,10 @@ static void writePPM(const char *filename, int width, int height,
     return;
   }
   fprintf(f, "P6\n%d %d\n255\n", width, height);
-  for (int i = 0; i < width * height; i++) {
-    fwrite(&pixels[i * 4], 1, 3, f); // Write RGB, skip A
+  for (int y = height - 1; y >= 0; y--) {
+    for (int x = 0; x < width; x++) {
+      fwrite(&pixels[(y * width + x) * 4], 1, 3, f); // Write RGB, skip A
+    }
   }
   fclose(f);
   printf("Wrote %s (%dx%d)\n", filename, width, height);

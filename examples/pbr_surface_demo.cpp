@@ -115,10 +115,13 @@ void savePPM(const char *filename, const uint8_t *pixels, int width, int height)
   }
   
   fprintf(file, "P6\n%d %d\n255\n", width, height);
-  for (int i = 0; i < width * height; i++) {
-    fputc(pixels[i * 4 + 0], file);
-    fputc(pixels[i * 4 + 1], file);
-    fputc(pixels[i * 4 + 2], file);
+  for (int y = height - 1; y >= 0; y--) {
+    for (int x = 0; x < width; x++) {
+      int i = y * width + x;
+      fputc(pixels[i * 4 + 0], file);
+      fputc(pixels[i * 4 + 1], file);
+      fputc(pixels[i * 4 + 2], file);
+    }
   }
   
   fclose(file);

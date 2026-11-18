@@ -91,6 +91,7 @@ struct Frame : public helium::BaseFrame
       const SlangOverride &slangOverride);
   void reportOnce(ANARIStatusSeverity severity, const std::string &message);
   void writeSample(int x, int y, const PixelSample &s);
+  uint32_t outputIndex(int x, int y) const;
 
   void softwareRasterize();
   void softwareRaymarchVolume();
