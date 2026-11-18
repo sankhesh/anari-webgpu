@@ -47,7 +47,11 @@ MatteMaterial::MatteMaterial(WebGPUDeviceGlobalState *s) : Material(s) {}
 
 void MatteMaterial::commitParameters()
 {
-  m_color = getParam<float4>("color", float4(0.8f, 0.8f, 0.8f, 1.f));
+  float3 color3;
+  if (getParam("color", ANARI_FLOAT32_VEC3, &color3))
+    m_color = float4(color3, 1.f);
+  else
+    m_color = getParam<float4>("color", float4(0.8f, 0.8f, 0.8f, 1.f));
   m_colorSampler = getParamObject<Sampler>("color");
 
   m_opacity = getParam<float>("opacity", 1.f);
