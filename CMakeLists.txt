@@ -163,6 +163,12 @@ add_library(
   world/World.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE anari::helium SlangKit::SlangKit anari_webgpu_shaders)
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE ANARI_WEBGPU_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+          ANARI_WEBGPU_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+          ANARI_WEBGPU_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+          ANARI_WEBGPU_VERSION_STRING="${PROJECT_VERSION}")
 
 # Link WebGPU
 if(EMSCRIPTEN)

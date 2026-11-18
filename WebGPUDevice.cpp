@@ -10,7 +10,10 @@
 #include "frame/Frame.h"
 #include "spatial_field/SpatialField.h"
 
+#include <algorithm>
 #include <cstdlib> // for std::getenv
+#include <cstring>
+#include <limits>
 #include <webgpu/webgpu.h>
 
 #include "anari_library_webgpu_queries.h"
@@ -454,6 +457,46 @@ int WebGPUDevice::deviceGetProperty(
   if (prop == "extension" && type == ANARI_STRING_LIST)
   {
     helium::writeToVoidP(mem, query_extensions());
+    return 1;
+  }
+  else if (prop == "version" && type == ANARI_INT32)
+  {
+    helium::writeToVoidP(mem,
+        int(ANARI_WEBGPU_VERSION_MAJOR * 1000 + ANARI_WEBGPU_VERSION_MINOR * 100
+            + ANARI_WEBGPU_VERSION_PATCH));
+    return 1;
+  }
+  else if (prop == "version.major" && type == ANARI_INT32)
+  {
+    helium::writeToVoidP(mem, int(ANARI_WEBGPU_VERSION_MAJOR));
+    return 1;
+  }
+  else if (prop == "version.minor" && type == ANARI_INT32)
+  {
+    helium::writeToVoidP(mem, int(ANARI_WEBGPU_VERSION_MINOR));
+    return 1;
+  }
+  else if (prop == "version.patch" && type == ANARI_INT32)
+  {
+    helium::writeToVoidP(mem, int(ANARI_WEBGPU_VERSION_PATCH));
+    return 1;
+  }
+  else if (prop == "version.name.size" && type == ANARI_UINT64)
+  {
+    helium::writeToVoidP(mem, uint64_t(sizeof(ANARI_WEBGPU_VERSION_STRING)));
+    return 1;
+  }
+  else if (prop == "version.name" && type == ANARI_STRING)
+  {
+    std::memset(mem, 0, size);
+    std::memcpy(mem,
+        ANARI_WEBGPU_VERSION_STRING,
+        std::min(uint64_t(sizeof(ANARI_WEBGPU_VERSION_STRING) - 1), size - 1));
+    return 1;
+  }
+  else if (prop == "geometryMaxIndex" && type == ANARI_UINT64)
+  {
+    helium::writeToVoidP(mem, uint64_t(std::numeric_limits<uint32_t>::max()));
     return 1;
   }
   else if (prop == "WebGPU" && type == ANARI_BOOL)
