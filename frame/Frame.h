@@ -93,6 +93,7 @@ struct Frame : public helium::BaseFrame
   void writeSample(int x, int y, const PixelSample &s);
   uint32_t outputIndex(int x, int y) const;
 
+  void depthToDistance();
   void softwareRasterize();
   void softwareRaymarchVolume();
 

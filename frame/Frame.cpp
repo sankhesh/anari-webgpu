@@ -37,6 +37,9 @@ void rel(Handle &h, ReleaseFn fn)
     h = nullptr;
   }
 }
+
+constexpr float kNear = 0.1f;
+constexpr float kFar = 1000.f;
 } // namespace
 
 namespace anari_webgpu {
@@ -251,7 +254,7 @@ void Frame::initComputeResources()
     desc.nextInChain = nullptr;
     desc.label = WGPUStringView{"anari_fb_readback", 17};
     desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
-    desc.size = numPixels * sizeof(float) * 4;
+    desc.size = numPixels * sizeof(float) * 5;
     desc.mappedAtCreation = false;
     m_readbackBuffer = wgpuDeviceCreateBuffer(device, &desc);
   }
@@ -670,7 +673,7 @@ void Frame::renderFrame()
       {
         auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
         float aspect = float(m_size.x) / float(m_size.y);
-        mat4 vp = cam ? linalg::mul(cam->projectionMatrix(aspect, 0.1f, 1000.f),
+        mat4 vp = cam ? linalg::mul(cam->projectionMatrix(aspect, kNear, kFar),
                             cam->viewMatrix())
                       : mat4(linalg::identity);
 
@@ -921,7 +924,7 @@ void Frame::renderFrame()
           mat4 viewInv = cam2 ? linalg::inverse(cam2->viewMatrix())
                               : mat4(linalg::identity);
           mat4 projInv = cam2
-              ? linalg::inverse(cam2->projectionMatrix(aspect2, 0.1f, 1000.f))
+              ? linalg::inverse(cam2->projectionMatrix(aspect2, kNear, kFar))
               : mat4(linalg::identity);
 
           struct VolumeUniforms {
@@ -984,9 +987,13 @@ void Frame::renderFrame()
         }
       }
 
+      const uint64_t colorBytes = numPixels * sizeof(float) * 4;
+      const bool readDepth = !m_depthBuffer.empty();
       wgpuCommandEncoderCopyBufferToBuffer(encoder,
-          m_colorStorageBuf, 0, m_readbackBuffer, 0,
-          numPixels * sizeof(float) * 4);
+          m_colorStorageBuf, 0, m_readbackBuffer, 0, colorBytes);
+      if (readDepth)
+        wgpuCommandEncoderCopyBufferToBuffer(encoder, m_depthStorageBuf, 0,
+            m_readbackBuffer, colorBytes, numPixels * sizeof(float));
 
       WGPUCommandBufferDescriptor cbDesc{};
       cbDesc.nextInChain = nullptr;
@@ -1002,7 +1009,7 @@ void Frame::renderFrame()
       mci.mode = WGPUCallbackMode_AllowProcessEvents;
       mci.callback = bufferMapCallback;
       mci.userdata1 = &mapCtx;
-      uint64_t rbSize = numPixels * sizeof(float) * 4;
+      uint64_t rbSize = colorBytes + (readDepth ? numPixels * sizeof(float) : 0);
       wgpuBufferMapAsync(m_readbackBuffer, WGPUMapMode_Read, 0, rbSize, mci);
       while (!mapCtx.done) {
 #if !defined(__EMSCRIPTEN__)
@@ -1015,11 +1022,15 @@ void Frame::renderFrame()
         const float *mapped = (const float *)wgpuBufferGetConstMappedRange(
             m_readbackBuffer, 0, rbSize);
         if (mapped) {
+          const float *depth = readDepth ? mapped + numPixels * 4 : nullptr;
           for (uint32_t y = 0; y < m_size.y; y++) {
             for (uint32_t x = 0; x < m_size.x; x++) {
               uint32_t i = y * m_size.x + x;
               float4 c{mapped[i*4], mapped[i*4+1], mapped[i*4+2], mapped[i*4+3]};
-              writeSample(x, y, PixelSample(c));
+              if (depth && depth[i] < 1.f)
+                writeSample(x, y, PixelSample(c, depth[i]));
+              else
+                writeSample(x, y, PixelSample(c));
             }
           }
         }
@@ -1041,9 +1052,35 @@ void Frame::renderFrame()
     softwareRasterize();
   }
 
+  depthToDistance();
+
 done:
   auto end = std::chrono::steady_clock::now();
   m_duration = std::chrono::duration<float>(end - start).count();
+}
+
+void Frame::depthToDistance()
+{
+  auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
+  if (m_depthBuffer.empty() || !cam)
+    return;
+
+  const float aspect = float(m_size.x) / float(m_size.y);
+  const mat4 projInv =
+      linalg::inverse(cam->projectionMatrix(aspect, kNear, kFar));
+  for (uint32_t y = 0; y < m_size.y; y++) {
+    for (uint32_t x = 0; x < m_size.x; x++) {
+      float &d = m_depthBuffer[y * m_size.x + x];
+      if (d == std::numeric_limits<float>::max())
+        continue;
+      const float4 p = linalg::mul(projInv,
+          float4((x + 0.5f) / m_size.x * 2.f - 1.f,
+              (y + 0.5f) / m_size.y * 2.f - 1.f,
+              d,
+              1.f));
+      d = linalg::length(p.xyz() / p.w);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,7 +1099,7 @@ void Frame::softwareRasterize()
 
   float aspect = float(m_size.x) / float(m_size.y);
   mat4 vp = linalg::mul(
-      cam->projectionMatrix(aspect, 0.1f, 1000.f), cam->viewMatrix());
+      cam->projectionMatrix(aspect, kNear, kFar), cam->viewMatrix());
 
   float3 lightDir = linalg::normalize(float3(0.f,-1.f,-1.f));
   float3 lightColor{1.f,1.f,1.f};
@@ -1305,7 +1342,7 @@ void Frame::softwareRaymarchVolume()
   float aspect = float(m_size.x) / float(m_size.y);
   float3 eye = cam->position();
   mat4 viewInv = linalg::inverse(cam->viewMatrix());
-  mat4 projInv = linalg::inverse(cam->projectionMatrix(aspect, 0.1f, 1000.f));
+  mat4 projInv = linalg::inverse(cam->projectionMatrix(aspect, kNear, kFar));
 
   auto unproject = [&](int px, int py) -> float3 {
     float ndcX = (px + 0.5f) / float(m_size.x) * 2.f - 1.f;

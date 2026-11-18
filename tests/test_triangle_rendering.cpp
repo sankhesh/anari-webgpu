@@ -105,7 +105,10 @@ static void test_depth_buffer() {
   uint32_t fbW, fbH; ANARIDataType fbType;
   const float *depth = (const float *)anariMapFrame(s.device, s.frame, "channel.depth", &fbW, &fbH, &fbType);
   if (depth) { int fc = 0; for (uint32_t i = 0; i < fbW*fbH; i++) if (std::isfinite(depth[i]) && depth[i] < 1e10f) fc++;
-    printf(" (%d finite depth pixels)", fc); anariUnmapFrame(s.device, s.frame, "channel.depth");
+    float center = depth[(fbH/2)*fbW + fbW/2];
+    printf(" (%d finite depth pixels, center %.4f)", fc, center);
+    assert(std::fabs(center - 2.f) < 1e-2f); assert(!(depth[0] < 1e10f));
+    anariUnmapFrame(s.device, s.frame, "channel.depth");
   } else printf(" (depth not available)");
   destroyScene(s); printf(" PASSED\n");
 }
