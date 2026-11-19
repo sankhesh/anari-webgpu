@@ -1225,7 +1225,10 @@ void Frame::softwareRasterize()
         float maxY=std::min(float(m_size.y-1),std::max({scr0.y,scr1.y,scr2.y}));
 
         auto edge=[](float3 a,float3 b,float2 c){
-          return (c.x-a.x)*(b.y-a.y)-(c.y-a.y)*(b.x-a.x);
+          const bool swap = a.x>b.x || (a.x==b.x && a.y>b.y);
+          if (swap) std::swap(a,b);
+          const float e = (c.x-a.x)*(b.y-a.y)-(c.y-a.y)*(b.x-a.x);
+          return swap ? -e : e;
         };
         float area=edge(scr0,scr1,float2(scr2.x,scr2.y));
         if (std::abs(area)<1e-6f) continue;

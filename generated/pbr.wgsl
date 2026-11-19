@@ -692,124 +692,170 @@ fn pbr_fetchVertex_0( triIdx_1 : u32,  idx_0 : u32,  c_5 : ptr<function, VertexC
 fn edgeFunction_0( a_0 : vec2<f32>,  b_0 : vec2<f32>,  c_6 : vec2<f32>) -> f32
 {
     var _S34 : f32 = a_0.x;
-    var _S35 : f32 = a_0.y;
-    return (c_6.x - _S34) * (b_0.y - _S35) - (c_6.y - _S35) * (b_0.x - _S34);
+    var _S35 : f32 = b_0.x;
+    var swap_0 : bool;
+    if(_S34 > _S35)
+    {
+        swap_0 = true;
+    }
+    else
+    {
+        if(_S34 == _S35)
+        {
+            swap_0 = (a_0.y) > (b_0.y);
+        }
+        else
+        {
+            swap_0 = false;
+        }
+    }
+    var p_0 : vec2<f32>;
+    if(swap_0)
+    {
+        p_0 = b_0;
+    }
+    else
+    {
+        p_0 = a_0;
+    }
+    var q_0 : vec2<f32>;
+    if(swap_0)
+    {
+        q_0 = a_0;
+    }
+    else
+    {
+        q_0 = b_0;
+    }
+    var _S36 : f32 = p_0.x;
+    var _S37 : f32 = p_0.y;
+    var e_0 : f32 = (c_6.x - _S36) * (q_0.y - _S37) - (c_6.y - _S37) * (q_0.x - _S36);
+    var _S38 : f32;
+    if(swap_0)
+    {
+        _S38 = - e_0;
+    }
+    else
+    {
+        _S38 = e_0;
+    }
+    return _S38;
 }
 
 fn setupScreenTriangleClip_0( c0_0 : vec4<f32>,  c1_0 : vec4<f32>,  c2_0 : vec4<f32>,  width_1 : u32,  height_1 : u32,  t_3 : ptr<function, ScreenTriangle_0>) -> bool
 {
-    var _S36 : vec3<f32> = vec3<f32>(0.0f);
-    (*t_3) = ScreenTriangle_x24init_0(_S36, _S36, _S36, _S36, _S36, _S36, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    var _S37 : f32 = c0_0.w;
-    var _S38 : bool;
-    if(_S37 <= 0.0f)
+    var _S39 : vec3<f32> = vec3<f32>(0.0f);
+    (*t_3) = ScreenTriangle_x24init_0(_S39, _S39, _S39, _S39, _S39, _S39, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    var _S40 : f32 = c0_0.w;
+    var _S41 : bool;
+    if(_S40 <= 0.0f)
     {
-        _S38 = true;
+        _S41 = true;
     }
     else
     {
-        _S38 = (c1_0.w) <= 0.0f;
+        _S41 = (c1_0.w) <= 0.0f;
     }
-    if(_S38)
+    if(_S41)
     {
-        _S38 = true;
+        _S41 = true;
     }
     else
     {
-        _S38 = (c2_0.w) <= 0.0f;
+        _S41 = (c2_0.w) <= 0.0f;
     }
-    if(_S38)
+    if(_S41)
     {
         return false;
     }
-    var _S39 : vec3<f32> = c0_0.xyz / vec3<f32>(_S37);
-    (*t_3).ndc0_0 = _S39;
-    var _S40 : vec3<f32> = c1_0.xyz / vec3<f32>(c1_0.w);
-    (*t_3).ndc1_0 = _S40;
-    var _S41 : vec3<f32> = c2_0.xyz / vec3<f32>(c2_0.w);
-    (*t_3).ndc2_0 = _S41;
+    var _S42 : vec3<f32> = c0_0.xyz / vec3<f32>(_S40);
+    (*t_3).ndc0_0 = _S42;
+    var _S43 : vec3<f32> = c1_0.xyz / vec3<f32>(c1_0.w);
+    (*t_3).ndc1_0 = _S43;
+    var _S44 : vec3<f32> = c2_0.xyz / vec3<f32>(c2_0.w);
+    (*t_3).ndc2_0 = _S44;
     var W_0 : f32 = f32(width_1);
     var H_1 : f32 = f32(height_1);
-    var _S42 : f32 = (_S39.x * 0.5f + 0.5f) * W_0;
-    var _S43 : f32 = (1.0f - (_S39.y * 0.5f + 0.5f)) * H_1;
-    (*t_3).s0_0 = vec3<f32>(_S42, _S43, _S39.z);
-    var _S44 : f32 = (_S40.x * 0.5f + 0.5f) * W_0;
-    var _S45 : f32 = (1.0f - (_S40.y * 0.5f + 0.5f)) * H_1;
-    (*t_3).s1_0 = vec3<f32>(_S44, _S45, _S40.z);
-    var _S46 : f32 = (_S41.x * 0.5f + 0.5f) * W_0;
-    var _S47 : f32 = (1.0f - (_S41.y * 0.5f + 0.5f)) * H_1;
-    (*t_3).s2_0 = vec3<f32>(_S46, _S47, _S41.z);
-    (*t_3).minX_0 = max(0.0f, min(min(_S42, _S44), _S46));
-    (*t_3).maxX_0 = min(W_0 - 1.0f, max(max(_S42, _S44), _S46));
-    (*t_3).minY_0 = max(0.0f, min(min(_S43, _S45), _S47));
-    (*t_3).maxY_0 = min(H_1 - 1.0f, max(max(_S43, _S45), _S47));
-    var _S48 : f32 = edgeFunction_0(vec2<f32>(_S42, _S43), vec2<f32>(_S44, _S45), vec2<f32>(_S46, _S47));
-    (*t_3).area_0 = _S48;
-    return (abs(_S48)) >= 9.99999997475242708e-07f;
+    var _S45 : f32 = (_S42.x * 0.5f + 0.5f) * W_0;
+    var _S46 : f32 = (1.0f - (_S42.y * 0.5f + 0.5f)) * H_1;
+    (*t_3).s0_0 = vec3<f32>(_S45, _S46, _S42.z);
+    var _S47 : f32 = (_S43.x * 0.5f + 0.5f) * W_0;
+    var _S48 : f32 = (1.0f - (_S43.y * 0.5f + 0.5f)) * H_1;
+    (*t_3).s1_0 = vec3<f32>(_S47, _S48, _S43.z);
+    var _S49 : f32 = (_S44.x * 0.5f + 0.5f) * W_0;
+    var _S50 : f32 = (1.0f - (_S44.y * 0.5f + 0.5f)) * H_1;
+    (*t_3).s2_0 = vec3<f32>(_S49, _S50, _S44.z);
+    (*t_3).minX_0 = max(0.0f, min(min(_S45, _S47), _S49));
+    (*t_3).maxX_0 = min(W_0 - 1.0f, max(max(_S45, _S47), _S49));
+    (*t_3).minY_0 = max(0.0f, min(min(_S46, _S48), _S50));
+    (*t_3).maxY_0 = min(H_1 - 1.0f, max(max(_S46, _S48), _S50));
+    var _S51 : f32 = edgeFunction_0(vec2<f32>(_S45, _S46), vec2<f32>(_S47, _S48), vec2<f32>(_S49, _S50));
+    (*t_3).area_0 = _S51;
+    return (abs(_S51)) >= 9.99999997475242708e-07f;
 }
 
 fn pbr_setupTriangle_0( triIdx_2 : u32,  r_2 : ptr<function, PBRTriangle_0>) -> bool
 {
-    var _S49 : vec3<f32> = vec3<f32>(0.0f);
-    var _S50 : VertexSample_0 = VertexSample_x24init_0(_S49, vec3<f32>(0.0f, 0.0f, 1.0f), _S49, vec2<f32>(0.0f), vec4<f32>(1.0f), u32(0), u32(0), u32(0), mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f));
-    (*r_2) = PBRTriangle_x24init_0(_S50, _S50, _S50, ScreenTriangle_x24init_0(_S49, _S49, _S49, _S49, _S49, _S49, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), u32(0));
+    var _S52 : vec3<f32> = vec3<f32>(0.0f);
+    var _S53 : VertexSample_0 = VertexSample_x24init_0(_S52, vec3<f32>(0.0f, 0.0f, 1.0f), _S52, vec2<f32>(0.0f), vec4<f32>(1.0f), u32(0), u32(0), u32(0), mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f));
+    (*r_2) = PBRTriangle_x24init_0(_S53, _S53, _S53, ScreenTriangle_x24init_0(_S52, _S52, _S52, _S52, _S52, _S52, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), u32(0));
     (*r_2).id_0 = triIdx_2;
     var i_5 : vec3<u32> = pbr_triangleIndices_0(triIdx_2);
     var c0_1 : VertexContext_0;
-    var _S51 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.x, &(c0_1));
-    (*r_2).v0_0 = _S51;
+    var _S54 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.x, &(c0_1));
+    (*r_2).v0_0 = _S54;
     var c1_1 : VertexContext_0;
-    var _S52 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.y, &(c1_1));
-    (*r_2).v1_0 = _S52;
+    var _S55 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.y, &(c1_1));
+    (*r_2).v1_0 = _S55;
     var c2_1 : VertexContext_0;
-    var _S53 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.z, &(c2_1));
-    (*r_2).v2_0 = _S53;
-    var _S54 : vec4<f32> = projectVertex_0(&(c0_1), (((c0_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
-    var _S55 : vec4<f32> = projectVertex_0(&(c1_1), (((c1_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
-    var _S56 : vec4<f32> = projectVertex_0(&(c2_1), (((c2_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
-    var _S57 : ScreenTriangle_0 = (*r_2).t_0;
-    var _S58 : bool = setupScreenTriangleClip_0(_S54, _S55, _S56, params_0.width_0, params_0.height_0, &(_S57));
-    (*r_2).t_0 = _S57;
-    return _S58;
+    var _S56 : VertexSample_0 = pbr_fetchVertex_0(triIdx_2, i_5.z, &(c2_1));
+    (*r_2).v2_0 = _S56;
+    var _S57 : vec4<f32> = projectVertex_0(&(c0_1), (((c0_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
+    var _S58 : vec4<f32> = projectVertex_0(&(c1_1), (((c1_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
+    var _S59 : vec4<f32> = projectVertex_0(&(c2_1), (((c2_1.positionMC_0) * (mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)])))));
+    var _S60 : ScreenTriangle_0 = (*r_2).t_0;
+    var _S61 : bool = setupScreenTriangleClip_0(_S57, _S58, _S59, params_0.width_0, params_0.height_0, &(_S60));
+    (*r_2).t_0 = _S60;
+    return _S61;
 }
 
 fn barycentric_0( t_4 : ScreenTriangle_0,  px_0 : i32,  py_0 : i32) -> vec3<f32>
 {
-    var p_0 : vec2<f32> = vec2<f32>(f32(px_0) + 0.5f, f32(py_0) + 0.5f);
-    var _S59 : vec2<f32> = t_4.s1_0.xy;
-    var _S60 : vec2<f32> = t_4.s2_0.xy;
-    var _S61 : vec2<f32> = t_4.s0_0.xy;
-    return vec3<f32>(edgeFunction_0(_S59, _S60, p_0) / t_4.area_0, edgeFunction_0(_S60, _S61, p_0) / t_4.area_0, edgeFunction_0(_S61, _S59, p_0) / t_4.area_0);
+    var p_1 : vec2<f32> = vec2<f32>(f32(px_0) + 0.5f, f32(py_0) + 0.5f);
+    var _S62 : vec2<f32> = t_4.s1_0.xy;
+    var _S63 : vec2<f32> = t_4.s2_0.xy;
+    var _S64 : vec2<f32> = t_4.s0_0.xy;
+    return vec3<f32>(edgeFunction_0(_S62, _S63, p_1) / t_4.area_0, edgeFunction_0(_S63, _S64, p_1) / t_4.area_0, edgeFunction_0(_S64, _S62, p_1) / t_4.area_0);
 }
 
 fn covered_1( w_1 : vec3<f32>) -> bool
 {
-    var _S62 : bool;
+    var _S65 : bool;
     if((w_1.x) >= 0.0f)
     {
-        _S62 = (w_1.y) >= 0.0f;
+        _S65 = (w_1.y) >= 0.0f;
     }
     else
     {
-        _S62 = false;
+        _S65 = false;
     }
-    if(_S62)
+    if(_S65)
     {
-        _S62 = (w_1.z) >= 0.0f;
+        _S65 = (w_1.z) >= 0.0f;
     }
     else
     {
-        _S62 = false;
+        _S65 = false;
     }
-    return _S62;
+    return _S65;
 }
 
 fn PBRSource_x24init_0( r_3 : PBRTriangle_0,  w_2 : vec3<f32>) -> PBRSource_0
 {
-    var _S63 : PBRSource_0;
-    _S63.r_0 = r_3;
-    _S63.w_0 = w_2;
-    return _S63;
+    var _S66 : PBRSource_0;
+    _S66.r_0 = r_3;
+    _S66.w_0 = w_2;
+    return _S66;
 }
 
 fn interpolateDepth_0( t_5 : ScreenTriangle_0,  w_3 : vec3<f32>) -> f32
@@ -819,47 +865,47 @@ fn interpolateDepth_0( t_5 : ScreenTriangle_0,  w_3 : vec3<f32>) -> f32
 
 fn FragmentContext_x24init_0( positionVC_1 : vec4<f32>,  normalVC_1 : vec3<f32>,  tangentVC_1 : vec3<f32>,  uv_7 : vec2<f32>,  ambientColor_5 : vec3<f32>,  diffuseColor_1 : vec3<f32>,  specularColor_5 : vec3<f32>,  specularPower_5 : f32,  opacity_5 : f32,  color_8 : vec4<f32>,  depth_2 : f32,  ids_1 : vec4<u32>,  fragCoord_3 : vec4<f32>,  primitiveId_7 : u32,  cellId_7 : u32,  frontFacing_3 : bool) -> FragmentContext_0
 {
-    var _S64 : FragmentContext_0;
-    _S64.positionVC_0 = positionVC_1;
-    _S64.normalVC_0 = normalVC_1;
-    _S64.tangentVC_0 = tangentVC_1;
-    _S64.uv_0 = uv_7;
-    _S64.ambientColor_0 = ambientColor_5;
-    _S64.diffuseColor_0 = diffuseColor_1;
-    _S64.specularColor_0 = specularColor_5;
-    _S64.specularPower_0 = specularPower_5;
-    _S64.opacity_0 = opacity_5;
-    _S64.color_0 = color_8;
-    _S64.depth_0 = depth_2;
-    _S64.ids_0 = ids_1;
-    _S64.fragCoord_0 = fragCoord_3;
-    _S64.primitiveId_0 = primitiveId_7;
-    _S64.cellId_0 = cellId_7;
-    _S64.frontFacing_0 = frontFacing_3;
-    return _S64;
+    var _S67 : FragmentContext_0;
+    _S67.positionVC_0 = positionVC_1;
+    _S67.normalVC_0 = normalVC_1;
+    _S67.tangentVC_0 = tangentVC_1;
+    _S67.uv_0 = uv_7;
+    _S67.ambientColor_0 = ambientColor_5;
+    _S67.diffuseColor_0 = diffuseColor_1;
+    _S67.specularColor_0 = specularColor_5;
+    _S67.specularPower_0 = specularPower_5;
+    _S67.opacity_0 = opacity_5;
+    _S67.color_0 = color_8;
+    _S67.depth_0 = depth_2;
+    _S67.ids_0 = ids_1;
+    _S67.fragCoord_0 = fragCoord_3;
+    _S67.primitiveId_0 = primitiveId_7;
+    _S67.cellId_0 = cellId_7;
+    _S67.frontFacing_0 = frontFacing_3;
+    return _S67;
 }
 
 fn pbr_fragment_0( r_4 : PBRTriangle_0,  w_4 : vec3<f32>,  px_1 : i32,  py_1 : i32,  depth_3 : f32) -> FragmentContext_0
 {
-    const _S65 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f);
-    var _S66 : vec3<f32> = vec3<f32>(0.0f);
-    var f_14 : FragmentContext_0 = FragmentContext_x24init_0(_S65, vec3<f32>(0.0f, 0.0f, 1.0f), _S66, vec2<f32>(0.0f), _S66, vec3<f32>(1.0f), _S66, 1.0f, 1.0f, _S65, 0.0f, vec4<u32>(u32(0)), vec4<f32>(0.0f), u32(0), u32(0), true);
-    var _S67 : f32 = w_4.x;
-    var _S68 : vec3<f32> = vec3<f32>(_S67);
-    var _S69 : f32 = w_4.y;
-    var _S70 : vec3<f32> = vec3<f32>(_S69);
-    var _S71 : f32 = w_4.z;
-    var _S72 : vec3<f32> = vec3<f32>(_S71);
-    f_14.positionVC_0 = vec4<f32>(r_4.v0_0.position_0 * _S68 + r_4.v1_0.position_0 * _S70 + r_4.v2_0.position_0 * _S72, 1.0f);
+    const _S68 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f);
+    var _S69 : vec3<f32> = vec3<f32>(0.0f);
+    var f_14 : FragmentContext_0 = FragmentContext_x24init_0(_S68, vec3<f32>(0.0f, 0.0f, 1.0f), _S69, vec2<f32>(0.0f), _S69, vec3<f32>(1.0f), _S69, 1.0f, 1.0f, _S68, 0.0f, vec4<u32>(u32(0)), vec4<f32>(0.0f), u32(0), u32(0), true);
+    var _S70 : f32 = w_4.x;
+    var _S71 : vec3<f32> = vec3<f32>(_S70);
+    var _S72 : f32 = w_4.y;
+    var _S73 : vec3<f32> = vec3<f32>(_S72);
+    var _S74 : f32 = w_4.z;
+    var _S75 : vec3<f32> = vec3<f32>(_S74);
+    f_14.positionVC_0 = vec4<f32>(r_4.v0_0.position_0 * _S71 + r_4.v1_0.position_0 * _S73 + r_4.v2_0.position_0 * _S75, 1.0f);
     if((params_0.hasNormals_0) != u32(0))
     {
-        f_14.normalVC_0 = normalize(r_4.v0_0.normal_0 * _S68 + r_4.v1_0.normal_0 * _S70 + r_4.v2_0.normal_0 * _S72);
+        f_14.normalVC_0 = normalize(r_4.v0_0.normal_0 * _S71 + r_4.v1_0.normal_0 * _S73 + r_4.v2_0.normal_0 * _S75);
     }
     else
     {
         f_14.normalVC_0 = normalize(cross(r_4.v1_0.position_0 - r_4.v0_0.position_0, r_4.v2_0.position_0 - r_4.v0_0.position_0));
     }
-    f_14.uv_0 = r_4.v0_0.uv_2 * vec2<f32>(_S67) + r_4.v1_0.uv_2 * vec2<f32>(_S69) + r_4.v2_0.uv_2 * vec2<f32>(_S71);
+    f_14.uv_0 = r_4.v0_0.uv_2 * vec2<f32>(_S70) + r_4.v1_0.uv_2 * vec2<f32>(_S72) + r_4.v2_0.uv_2 * vec2<f32>(_S74);
     f_14.fragCoord_0 = vec4<f32>(f32(px_1) + 0.5f, f32(py_1) + 0.5f, depth_3, 1.0f);
     f_14.depth_0 = depth_3;
     f_14.primitiveId_0 = r_4.id_0;
@@ -871,8 +917,8 @@ fn pbr_fragment_0( r_4 : PBRTriangle_0,  w_4 : vec3<f32>,  px_1 : i32,  py_1 : i
 fn pbr_fragmentDepth_0( source_2 : PBRSource_0,  f_15 : ptr<function, FragmentContext_0>,  s_15 : ptr<function, SurfaceSample_0>,  depth_4 : ptr<function, f32>) -> bool
 {
     (*depth_4) = (*f_15).depth_0;
-    var _S73 : bool = surfaceCoverage_0(source_2, &((*f_15)), &((*s_15)));
-    if(!_S73)
+    var _S76 : bool = surfaceCoverage_0(source_2, &((*f_15)), &((*s_15)));
+    if(!_S76)
     {
         return false;
     }
@@ -895,8 +941,8 @@ fn pbr_depth_main(@builtin(global_invocation_id) gid_0 : vec3<u32>)
         return;
     }
     var r_5 : PBRTriangle_0;
-    var _S74 : bool = pbr_setupTriangle_0(triIdx_3, &(r_5));
-    if(!_S74)
+    var _S77 : bool = pbr_setupTriangle_0(triIdx_3, &(r_5));
+    if(!_S77)
     {
         return;
     }
@@ -930,13 +976,13 @@ fn pbr_depth_main(@builtin(global_invocation_id) gid_0 : vec3<u32>)
             var f_16 : FragmentContext_0 = pbr_fragment_0(r_5, w_5, px_2, py_2, interpolateDepth_0(r_5.t_0, w_5));
             var s_16 : SurfaceSample_0;
             var depth_5 : f32;
-            var _S75 : bool = pbr_fragmentDepth_0(source_3, &(f_16), &(s_16), &(depth_5));
-            if(!_S75)
+            var _S78 : bool = pbr_fragmentDepth_0(source_3, &(f_16), &(s_16), &(depth_5));
+            if(!_S78)
             {
                 px_2 = px_2 + i32(1);
                 continue;
             }
-            var _S76 : u32 = atomicMin(&(depthBufI_0[u32(py_2) * params_0.width_0 + u32(px_2)]), depthToU32_0(depth_5));
+            var _S79 : u32 = atomicMin(&(depthBufI_0[u32(py_2) * params_0.width_0 + u32(px_2)]), depthToU32_0(depth_5));
             px_2 = px_2 + i32(1);
         }
         py_2 = py_2 + i32(1);
@@ -954,8 +1000,8 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
         return;
     }
     var r_6 : PBRTriangle_0;
-    var _S77 : bool = pbr_setupTriangle_0(triIdx_4, &(r_6));
-    if(!_S77)
+    var _S80 : bool = pbr_setupTriangle_0(triIdx_4, &(r_6));
+    if(!_S80)
     {
         return;
     }
@@ -989,22 +1035,22 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             var f_17 : FragmentContext_0 = pbr_fragment_0(r_6, w_6, px_3, py_3, interpolateDepth_0(r_6.t_0, w_6));
             var s_17 : SurfaceSample_0;
             var depth_6 : f32;
-            var _S78 : bool = pbr_fragmentDepth_0(source_4, &(f_17), &(s_17), &(depth_6));
-            if(!_S78)
+            var _S81 : bool = pbr_fragmentDepth_0(source_4, &(f_17), &(s_17), &(depth_6));
+            if(!_S81)
             {
                 px_3 = px_3 + i32(1);
                 continue;
             }
             var pixIdx_0 : u32 = u32(py_3) * params_0.width_0 + u32(px_3);
-            var _S79 : u32 = depthToU32_0(depth_6);
-            var _S80 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
-            if(_S79 > (_S80 + u32(256)))
+            var _S82 : u32 = depthToU32_0(depth_6);
+            var _S83 : u32 = atomicLoad(&(depthBufI_0[pixIdx_0]));
+            if(_S82 > (_S83 + u32(256)))
             {
                 px_3 = px_3 + i32(1);
                 continue;
             }
-            var _S81 : bool = surfaceShade_0(source_4, &(f_17), s_17);
-            if(!_S81)
+            var _S84 : bool = surfaceShade_0(source_4, &(f_17), s_17);
+            if(!_S84)
             {
                 px_3 = px_3 + i32(1);
                 continue;

@@ -10,7 +10,11 @@ public uint depthToU32(float d)
 
 public float edgeFunction(float2 a, float2 b, float2 c)
 {
-    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+    bool   swap = a.x > b.x || (a.x == b.x && a.y > b.y);
+    float2 p    = swap ? b : a;
+    float2 q    = swap ? a : b;
+    float  e    = (c.x - p.x) * (q.y - p.y) - (c.y - p.y) * (q.x - p.x);
+    return swap ? -e : e;
 }
 
 public static const uint kDepthTolerance = 256u;

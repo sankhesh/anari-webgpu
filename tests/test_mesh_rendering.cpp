@@ -10,7 +10,7 @@ static ANARIDevice createTestDevice() {
   ANARILibrary lib = anariLoadLibrary("webgpu", statusFunc, nullptr); assert(lib);
   ANARIDevice dev = anariNewDevice(lib, "default"); assert(dev); return dev;
 }
-static bool renderAndValidate(ANARIDevice dev, ANARIWorld world, int w, int h) {
+static bool renderAndValidate(ANARIDevice dev, ANARIWorld world, int w, int h, bool checkGaps = false) {
   ANARICamera cam = anariNewCamera(dev, "perspective");
   float pos[]={0,0,3}, dir[]={0,0,-1}, up[]={0,1,0}; float fovy=1.0472f, aspect=(float)w/h;
   anariSetParameter(dev, cam, "position", ANARI_FLOAT32_VEC3, pos);
@@ -23,9 +23,10 @@ static bool renderAndValidate(ANARIDevice dev, ANARIWorld world, int w, int h) {
   float bg[]={0,0,0,1}; anariSetParameter(dev, ren, "background", ANARI_FLOAT32_VEC4, bg);
   anariCommitParameters(dev, ren);
   ANARIFrame frame = anariNewFrame(dev);
-  uint32_t sz[]={(uint32_t)w,(uint32_t)h}; ANARIDataType ct=ANARI_UFIXED8_VEC4;
+  uint32_t sz[]={(uint32_t)w,(uint32_t)h}; ANARIDataType ct=ANARI_UFIXED8_VEC4, dt=ANARI_FLOAT32;
   anariSetParameter(dev, frame, "size", ANARI_UINT32_VEC2, sz);
   anariSetParameter(dev, frame, "channel.color", ANARI_DATA_TYPE, &ct);
+  if (checkGaps) anariSetParameter(dev, frame, "channel.depth", ANARI_DATA_TYPE, &dt);
   anariSetParameter(dev, frame, "renderer", ANARI_RENDERER, &ren);
   anariSetParameter(dev, frame, "camera", ANARI_CAMERA, &cam);
   anariSetParameter(dev, frame, "world", ANARI_WORLD, &world);
@@ -35,6 +36,16 @@ static bool renderAndValidate(ANARIDevice dev, ANARIWorld world, int w, int h) {
   const uint8_t *px = (const uint8_t *)anariMapFrame(dev, frame, "channel.color", &fbW, &fbH, &fbType);
   bool valid = (px != nullptr) && (fbW == (uint32_t)w) && (fbH == (uint32_t)h);
   if (px) anariUnmapFrame(dev, frame, "channel.color");
+  if (checkGaps) {
+    const float *depth = (const float *)anariMapFrame(dev, frame, "channel.depth", &fbW, &fbH, &fbType);
+    valid = valid && depth;
+    for (uint32_t y = 0; depth && y < fbH; y++) {
+      int first = -1, last = -1, count = 0;
+      for (uint32_t x = 0; x < fbW; x++) if (depth[y*fbW+x] < 1e30f) { if (first < 0) first = x; last = x; count++; }
+      if (count && count != last - first + 1) { fprintf(stderr, "gap in row %u of %dx%d\n", y, w, h); valid = false; }
+    }
+    if (depth) anariUnmapFrame(dev, frame, "channel.depth");
+  }
   anariRelease(dev, frame); anariRelease(dev, ren); anariRelease(dev, cam);
   return valid;
 }
@@ -61,7 +72,8 @@ static void test_quad_mesh() {
   ANARIArray1D sa=anariNewArray1D(dev,&surf,0,0,ANARI_SURFACE,1);
   anariSetParameter(dev,world,"surface",ANARI_ARRAY1D,&sa);
   anariCommitParameters(dev,world);
-  assert(renderAndValidate(dev,world,64,64));
+  const int sizes[] = {64, 100, 128, 256, 512};
+  for (int sz : sizes) assert(renderAndValidate(dev,world,sz,sz,true));
   anariRelease(dev,world); anariRelease(dev,sa); anariRelease(dev,surf);
   anariRelease(dev,geom); anariRelease(dev,mat);
   anariRelease(dev,pa); anariRelease(dev,ia); anariRelease(dev,na);
