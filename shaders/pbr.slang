@@ -11,11 +11,24 @@ type_param O : ISurfaceOutput;
 type_param V : IVertexModifier;
 type_param H : IShaderHooks;
 typealias Default_IMaterial       = HostDrivenMaterial;
-typealias Default_ILightingModel  = CookTorranceLighting;
+typealias Default_ILightingModel  = LinearCookTorranceLighting;
 typealias Default_INormalModifier = GeometricNormal;
 typealias Default_ISurfaceOutput  = StandardOutput;
 typealias Default_IVertexModifier = IdentityVertex;
 typealias Default_IShaderHooks    = DefaultHooks;
+
+struct LinearCookTorranceLighting : ILightingModel
+{
+    float3 direct(MaterialSample m, SurfaceSample s, LightSample light)
+    {
+        return CookTorranceLighting().direct(m, s, light);
+    }
+    float3 ambient(MaterialSample m, SurfaceSample s, float3 ambientRadiance)
+    {
+        return CookTorranceLighting().ambient(m, s, ambientRadiance);
+    }
+    float3 resolve(float3 radiance, MaterialSample m) { return radiance; }
+};
 
 struct PBRUniforms
 {

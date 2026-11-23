@@ -264,6 +264,11 @@ fn CookTorranceLighting_ambient_0( m_1 : MaterialSample_0,  s_5 : SurfaceSample_
     return ambientRadiance_1 * m_1.baseColor_2;
 }
 
+fn LinearCookTorranceLighting_ambient_0( m_2 : MaterialSample_0,  s_6 : SurfaceSample_0,  ambientRadiance_2 : vec3<f32>) -> vec3<f32>
+{
+    return CookTorranceLighting_ambient_0(m_2, s_6, ambientRadiance_2);
+}
+
 struct LightSample_0
 {
      direction_0 : vec3<f32>,
@@ -278,7 +283,7 @@ fn LightSample_x24init_0( direction_1 : vec3<f32>,  radiance_1 : vec3<f32>) -> L
     return _S3;
 }
 
-fn PBRSource_light_0( this_4 : PBRSource_0,  i_0 : u32,  s_6 : SurfaceSample_0) -> LightSample_0
+fn PBRSource_light_0( this_4 : PBRSource_0,  i_0 : u32,  s_7 : SurfaceSample_0) -> LightSample_0
 {
     var light_0 : LightSample_0 = LightSample_x24init_0(vec3<f32>(0.0f, 0.0f, 1.0f), vec3<f32>(1.0f));
     light_0.direction_0 = normalize((vec3<f32>(0) - params_0.lightDir_0));
@@ -306,61 +311,55 @@ fn CookTorranceLighting_F_Schlick_0( cosTheta_0 : f32,  F0_0 : vec3<f32>) -> vec
     return F0_0 + (vec3<f32>(1.0f) - F0_0) * vec3<f32>((t_1 * t_1 * t_1 * t_1 * t_1));
 }
 
-fn CookTorranceLighting_direct_0( m_2 : MaterialSample_0,  s_7 : SurfaceSample_0,  light_1 : LightSample_0) -> vec3<f32>
+fn CookTorranceLighting_direct_0( m_3 : MaterialSample_0,  s_8 : SurfaceSample_0,  light_1 : LightSample_0) -> vec3<f32>
 {
-    var H_0 : vec3<f32> = normalize(s_7.viewDir_0 + light_1.direction_0);
-    var _S4 : f32 = max(dot(s_7.normal_1, light_1.direction_0), 0.0f);
-    var _S5 : f32 = max(dot(s_7.normal_1, s_7.viewDir_0), 0.00009999999747379f);
-    var _S6 : f32 = m_2.roughness_1;
-    var F_0 : vec3<f32> = CookTorranceLighting_F_Schlick_0(max(dot(H_0, s_7.viewDir_0), 0.0f), mix(vec3<f32>(0.03999999910593033f), m_2.baseColor_2, vec3<f32>(m_2.metallic_1)));
-    return ((vec3<f32>(1.0f) - F_0) * vec3<f32>((1.0f - m_2.metallic_1)) * m_2.baseColor_2 / vec3<f32>(3.14159274101257324f) + vec3<f32>((CookTorranceLighting_D_GGX_0(max(dot(s_7.normal_1, H_0), 0.0f), _S6 * _S6) * (CookTorranceLighting_G_SchlickGGX_0(_S5, m_2.roughness_1) * CookTorranceLighting_G_SchlickGGX_0(_S4, m_2.roughness_1)))) * F_0 / vec3<f32>((4.0f * _S5 * _S4 + 0.00009999999747379f))) * light_1.radiance_0 * vec3<f32>(_S4);
+    var H_0 : vec3<f32> = normalize(s_8.viewDir_0 + light_1.direction_0);
+    var _S4 : f32 = max(dot(s_8.normal_1, light_1.direction_0), 0.0f);
+    var _S5 : f32 = max(dot(s_8.normal_1, s_8.viewDir_0), 0.00009999999747379f);
+    var _S6 : f32 = m_3.roughness_1;
+    var F_0 : vec3<f32> = CookTorranceLighting_F_Schlick_0(max(dot(H_0, s_8.viewDir_0), 0.0f), mix(vec3<f32>(0.03999999910593033f), m_3.baseColor_2, vec3<f32>(m_3.metallic_1)));
+    return ((vec3<f32>(1.0f) - F_0) * vec3<f32>((1.0f - m_3.metallic_1)) * m_3.baseColor_2 / vec3<f32>(3.14159274101257324f) + vec3<f32>((CookTorranceLighting_D_GGX_0(max(dot(s_8.normal_1, H_0), 0.0f), _S6 * _S6) * (CookTorranceLighting_G_SchlickGGX_0(_S5, m_3.roughness_1) * CookTorranceLighting_G_SchlickGGX_0(_S4, m_3.roughness_1)))) * F_0 / vec3<f32>((4.0f * _S5 * _S4 + 0.00009999999747379f))) * light_1.radiance_0 * vec3<f32>(_S4);
 }
 
-fn gammaCorrect_0( c_0 : f32) -> f32
+fn LinearCookTorranceLighting_direct_0( m_4 : MaterialSample_0,  s_9 : SurfaceSample_0,  light_2 : LightSample_0) -> vec3<f32>
 {
-    return pow(max(c_0, 0.0f), 0.45454543828964233f);
+    return CookTorranceLighting_direct_0(m_4, s_9, light_2);
 }
 
-fn tonemapAndGamma_0( color_3 : vec3<f32>) -> vec3<f32>
+fn LinearCookTorranceLighting_resolve_0( radiance_2 : vec3<f32>,  m_5 : MaterialSample_0) -> vec3<f32>
 {
-    var tm_0 : vec3<f32> = color_3 / (color_3 + vec3<f32>(1.0f, 1.0f, 1.0f));
-    return vec3<f32>(gammaCorrect_0(tm_0.x), gammaCorrect_0(tm_0.y), gammaCorrect_0(tm_0.z));
+    return radiance_2;
 }
 
-fn CookTorranceLighting_resolve_0( radiance_2 : vec3<f32>,  m_3 : MaterialSample_0) -> vec3<f32>
-{
-    return tonemapAndGamma_0(radiance_2);
-}
-
-fn PBRSource_opacity_0( this_5 : PBRSource_0,  m_4 : MaterialSample_0,  color_4 : ptr<function, vec4<f32>>) -> bool
+fn PBRSource_opacity_0( this_5 : PBRSource_0,  m_6 : MaterialSample_0,  color_3 : ptr<function, vec4<f32>>) -> bool
 {
     if((params_0.alphaMode_0) == u32(2))
     {
-        if((m_4.opacity_2) < (params_0.alphaCutoff_0))
+        if((m_6.opacity_2) < (params_0.alphaCutoff_0))
         {
             return false;
         }
-        (*color_4)[i32(3)] = 1.0f;
+        (*color_3)[i32(3)] = 1.0f;
     }
     else
     {
         if((params_0.alphaMode_0) != u32(1))
         {
-            (*color_4)[i32(3)] = 1.0f;
+            (*color_3)[i32(3)] = 1.0f;
         }
     }
     return true;
 }
 
-fn StandardOutput_finish_0( color_5 : vec4<f32>,  m_5 : MaterialSample_0,  s_8 : SurfaceSample_0) -> vec4<f32>
+fn StandardOutput_finish_0( color_4 : vec4<f32>,  m_7 : MaterialSample_0,  s_10 : SurfaceSample_0) -> vec4<f32>
 {
-    return color_5;
+    return color_4;
 }
 
-fn surfaceShade_0( source_0 : PBRSource_0,  f_8 : ptr<function, FragmentContext_0>,  s_9 : SurfaceSample_0) -> bool
+fn surfaceShade_0( source_0 : PBRSource_0,  f_8 : ptr<function, FragmentContext_0>,  s_11 : SurfaceSample_0) -> bool
 {
-    var _S7 : SurfaceSample_0 = s_9;
-    _S7.normal_1 = GeometricNormal_normal_0(s_9);
+    var _S7 : SurfaceSample_0 = s_11;
+    _S7.normal_1 = GeometricNormal_normal_0(s_11);
     var _S8 : MaterialSample_0 = HostDrivenMaterial_evaluate_0(_S7);
     var lights_0 : u32 = PBRSource_lightCount_0(source_0, _S7);
     if(lights_0 == u32(0))
@@ -369,7 +368,7 @@ fn surfaceShade_0( source_0 : PBRSource_0,  f_8 : ptr<function, FragmentContext_
     }
     else
     {
-        var _S9 : vec3<f32> = CookTorranceLighting_ambient_0(_S8, _S7, PBRSource_ambientRadiance_0(source_0, _S7));
+        var _S9 : vec3<f32> = LinearCookTorranceLighting_ambient_0(_S8, _S7, PBRSource_ambientRadiance_0(source_0, _S7));
         var i_1 : u32 = u32(0);
         var radiance_3 : vec3<f32> = _S9;
         for(;;)
@@ -381,11 +380,11 @@ fn surfaceShade_0( source_0 : PBRSource_0,  f_8 : ptr<function, FragmentContext_
             {
                 break;
             }
-            var radiance_4 : vec3<f32> = radiance_3 + CookTorranceLighting_direct_0(_S8, _S7, PBRSource_light_0(source_0, i_1, _S7));
+            var radiance_4 : vec3<f32> = radiance_3 + LinearCookTorranceLighting_direct_0(_S8, _S7, PBRSource_light_0(source_0, i_1, _S7));
             i_1 = i_1 + u32(1);
             radiance_3 = radiance_4;
         }
-        (*f_8).color_0 = vec4<f32>(CookTorranceLighting_resolve_0(radiance_3, _S8) + _S8.emissive_2, _S8.opacity_2);
+        (*f_8).color_0 = vec4<f32>(LinearCookTorranceLighting_resolve_0(radiance_3, _S8) + _S8.emissive_2, _S8.opacity_2);
     }
     var _S10 : vec4<f32> = (*f_8).color_0;
     var opaque_0 : bool = PBRSource_opacity_0(source_0, _S8, &(_S10));
@@ -465,48 +464,48 @@ fn surfaceSample_0( f_11 : FragmentContext_0) -> SurfaceSample_0
 {
     var _S15 : vec3<f32> = vec3<f32>(0.0f);
     const _S16 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 1.0f);
-    var s_10 : SurfaceSample_0 = SurfaceSample_x24init_0(_S15, _S16, _S15, _S16, vec2<f32>(0.0f), 0.0f, vec4<f32>(0.0f), u32(0), u32(0), true, vec4<u32>(u32(0)), CameraSample_x24init_0(mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), false), HostMaterial_x24init_0(vec3<f32>(1.0f), 1.0f, 0.0f, 1.0f, _S15, _S15, _S15, 1.0f));
+    var s_12 : SurfaceSample_0 = SurfaceSample_x24init_0(_S15, _S16, _S15, _S16, vec2<f32>(0.0f), 0.0f, vec4<f32>(0.0f), u32(0), u32(0), true, vec4<u32>(u32(0)), CameraSample_x24init_0(mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), false), HostMaterial_x24init_0(vec3<f32>(1.0f), 1.0f, 0.0f, 1.0f, _S15, _S15, _S15, 1.0f));
     var _S17 : vec3<f32> = f_11.positionVC_0.xyz;
-    s_10.position_1 = _S17;
-    s_10.normal_1 = f_11.normalVC_0;
-    s_10.tangent_1 = f_11.tangentVC_0;
-    s_10.viewDir_0 = normalize((vec3<f32>(0) - _S17));
-    s_10.uv_3 = f_11.uv_0;
-    s_10.fragCoord_1 = f_11.fragCoord_0;
-    s_10.primitiveId_3 = f_11.primitiveId_0;
-    s_10.cellId_3 = f_11.cellId_0;
-    s_10.frontFacing_1 = f_11.frontFacing_0;
-    s_10.host_0.baseColor_1 = f_11.diffuseColor_0;
-    s_10.host_0.ambientColor_1 = f_11.ambientColor_0;
-    s_10.host_0.specularColor_1 = f_11.specularColor_0;
-    s_10.host_0.specularPower_1 = f_11.specularPower_0;
-    s_10.host_0.opacity_1 = f_11.opacity_0;
-    return s_10;
+    s_12.position_1 = _S17;
+    s_12.normal_1 = f_11.normalVC_0;
+    s_12.tangent_1 = f_11.tangentVC_0;
+    s_12.viewDir_0 = normalize((vec3<f32>(0) - _S17));
+    s_12.uv_3 = f_11.uv_0;
+    s_12.fragCoord_1 = f_11.fragCoord_0;
+    s_12.primitiveId_3 = f_11.primitiveId_0;
+    s_12.cellId_3 = f_11.cellId_0;
+    s_12.frontFacing_1 = f_11.frontFacing_0;
+    s_12.host_0.baseColor_1 = f_11.diffuseColor_0;
+    s_12.host_0.ambientColor_1 = f_11.ambientColor_0;
+    s_12.host_0.specularColor_1 = f_11.specularColor_0;
+    s_12.host_0.specularPower_1 = f_11.specularPower_0;
+    s_12.host_0.opacity_1 = f_11.opacity_0;
+    return s_12;
 }
 
 fn PBRSource_sample_0( this_7 : PBRSource_0,  f_12 : FragmentContext_0) -> SurfaceSample_0
 {
-    var s_11 : SurfaceSample_0 = surfaceSample_0(f_12);
+    var s_13 : SurfaceSample_0 = surfaceSample_0(f_12);
     var ndcC_0 : vec3<f32> = this_7.r_0.t_0.ndc0_0 * vec3<f32>(this_7.w_0.x) + this_7.r_0.t_0.ndc1_0 * vec3<f32>(this_7.w_0.y) + this_7.r_0.t_0.ndc2_0 * vec3<f32>(this_7.w_0.z);
-    s_11.viewDir_0 = normalize(vec3<f32>(- ndcC_0.x, - ndcC_0.y, 1.0f));
-    s_11.camera_0.shadingToClip_0 = mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]);
-    s_11.host_0.metallic_0 = params_0.metallicRoughness_0.x;
-    s_11.host_0.roughness_0 = params_0.metallicRoughness_0.y;
-    s_11.host_0.emissive_1 = params_0.emissive_0.xyz * vec3<f32>(params_0.emissive_0.w);
-    return s_11;
+    s_13.viewDir_0 = normalize(vec3<f32>(- ndcC_0.x, - ndcC_0.y, 1.0f));
+    s_13.camera_0.shadingToClip_0 = mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]);
+    s_13.host_0.metallic_0 = params_0.metallicRoughness_0.x;
+    s_13.host_0.roughness_0 = params_0.metallicRoughness_0.y;
+    s_13.host_0.emissive_1 = params_0.emissive_0.xyz * vec3<f32>(params_0.emissive_0.w);
+    return s_13;
 }
 
-fn StandardOutput_keep_0( s_12 : SurfaceSample_0) -> bool
+fn StandardOutput_keep_0( s_14 : SurfaceSample_0) -> bool
 {
     return true;
 }
 
-fn StandardOutput_depth_0( depth_1 : f32,  s_13 : SurfaceSample_0) -> f32
+fn StandardOutput_depth_0( depth_1 : f32,  s_15 : SurfaceSample_0) -> f32
 {
     return depth_1;
 }
 
-fn surfaceCoverage_0( source_1 : PBRSource_0,  f_13 : ptr<function, FragmentContext_0>,  s_14 : ptr<function, SurfaceSample_0>) -> bool
+fn surfaceCoverage_0( source_1 : PBRSource_0,  f_13 : ptr<function, FragmentContext_0>,  s_16 : ptr<function, SurfaceSample_0>) -> bool
 {
     var _S18 : bool = IShaderHooks_clipx24defaultImpl_0(&((*f_13)));
     PBRSource_colors_0(source_1, &((*f_13)));
@@ -514,7 +513,7 @@ fn surfaceCoverage_0( source_1 : PBRSource_0,  f_13 : ptr<function, FragmentCont
     ISurfaceSource_geometryx24defaultImpl_0(source_1, &((*f_13)));
     IShaderHooks_normalx24defaultImpl_0(&((*f_13)));
     var _S19 : SurfaceSample_0 = PBRSource_sample_0(source_1, (*f_13));
-    (*s_14) = _S19;
+    (*s_16) = _S19;
     var covered_0 : bool;
     if(!StandardOutput_keep_0(_S19))
     {
@@ -524,15 +523,15 @@ fn surfaceCoverage_0( source_1 : PBRSource_0,  f_13 : ptr<function, FragmentCont
     {
         covered_0 = _S18;
     }
-    (*f_13).depth_0 = StandardOutput_depth_0(ISurfaceSource_depthx24defaultImpl_0(source_1, (*f_13), (*s_14)), (*s_14));
+    (*f_13).depth_0 = StandardOutput_depth_0(ISurfaceSource_depthx24defaultImpl_0(source_1, (*f_13), (*s_16)), (*s_16));
     return covered_0;
 }
 
-fn projectVertex_0( c_1 : ptr<function, VertexContext_0>,  positionClip_1 : vec4<f32>) -> vec4<f32>
+fn projectVertex_0( c_0 : ptr<function, VertexContext_0>,  positionClip_1 : vec4<f32>) -> vec4<f32>
 {
-    (*c_1).positionClip_0 = positionClip_1;
-    IShaderHooks_positionx24defaultImpl_0(&((*c_1)));
-    return (*c_1).positionClip_0;
+    (*c_0).positionClip_0 = positionClip_1;
+    IShaderHooks_positionx24defaultImpl_0(&((*c_0)));
+    return (*c_0).positionClip_0;
 }
 
 fn IdentityVertex_modify_0( v_2 : VertexSample_0) -> VertexSample_0
@@ -540,14 +539,14 @@ fn IdentityVertex_modify_0( v_2 : VertexSample_0) -> VertexSample_0
     return v_2;
 }
 
-fn VertexContext_x24init_0( positionMC_1 : vec4<f32>,  normalMC_1 : vec3<f32>,  tangentMC_1 : vec3<f32>,  uv_5 : vec2<f32>,  color_6 : vec4<f32>,  positionClip_2 : vec4<f32>,  pointId_2 : u32,  cellId_5 : u32,  primitiveId_5 : u32,  modelToClip_2 : mat4x4<f32>,  normalModelToView_1 : mat3x3<f32>) -> VertexContext_0
+fn VertexContext_x24init_0( positionMC_1 : vec4<f32>,  normalMC_1 : vec3<f32>,  tangentMC_1 : vec3<f32>,  uv_5 : vec2<f32>,  color_5 : vec4<f32>,  positionClip_2 : vec4<f32>,  pointId_2 : u32,  cellId_5 : u32,  primitiveId_5 : u32,  modelToClip_2 : mat4x4<f32>,  normalModelToView_1 : mat3x3<f32>) -> VertexContext_0
 {
     var _S20 : VertexContext_0;
     _S20.positionMC_0 = positionMC_1;
     _S20.normalMC_0 = normalMC_1;
     _S20.tangentMC_0 = tangentMC_1;
     _S20.uv_1 = uv_5;
-    _S20.color_1 = color_6;
+    _S20.color_1 = color_5;
     _S20.positionClip_0 = positionClip_2;
     _S20.pointId_0 = pointId_2;
     _S20.cellId_1 = cellId_5;
@@ -560,46 +559,46 @@ fn VertexContext_x24init_0( positionMC_1 : vec4<f32>,  normalMC_1 : vec3<f32>,  
 fn vertexContext_0( v_3 : VertexSample_0) -> VertexContext_0
 {
     const _S21 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f);
-    var c_2 : VertexContext_0 = VertexContext_x24init_0(_S21, vec3<f32>(0.0f, 0.0f, 1.0f), vec3<f32>(0.0f), vec2<f32>(0.0f), vec4<f32>(1.0f), _S21, u32(0), u32(0), u32(0), mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), mat3x3<f32>(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f));
-    c_2.positionMC_0 = vec4<f32>(v_3.position_0, 1.0f);
-    c_2.normalMC_0 = v_3.normal_0;
-    c_2.tangentMC_0 = v_3.tangent_0;
-    c_2.uv_1 = v_3.uv_2;
-    c_2.color_1 = v_3.color_2;
-    c_2.pointId_0 = v_3.pointId_1;
-    c_2.cellId_1 = v_3.cellId_2;
-    c_2.primitiveId_1 = v_3.primitiveId_2;
-    c_2.modelToClip_0 = v_3.modelToClip_1;
-    return c_2;
+    var c_1 : VertexContext_0 = VertexContext_x24init_0(_S21, vec3<f32>(0.0f, 0.0f, 1.0f), vec3<f32>(0.0f), vec2<f32>(0.0f), vec4<f32>(1.0f), _S21, u32(0), u32(0), u32(0), mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), mat3x3<f32>(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f));
+    c_1.positionMC_0 = vec4<f32>(v_3.position_0, 1.0f);
+    c_1.normalMC_0 = v_3.normal_0;
+    c_1.tangentMC_0 = v_3.tangent_0;
+    c_1.uv_1 = v_3.uv_2;
+    c_1.color_1 = v_3.color_2;
+    c_1.pointId_0 = v_3.pointId_1;
+    c_1.cellId_1 = v_3.cellId_2;
+    c_1.primitiveId_1 = v_3.primitiveId_2;
+    c_1.modelToClip_0 = v_3.modelToClip_1;
+    return c_1;
 }
 
-fn vertexSample_0( c_3 : VertexContext_0,  v_4 : VertexSample_0) -> VertexSample_0
+fn vertexSample_0( c_2 : VertexContext_0,  v_4 : VertexSample_0) -> VertexSample_0
 {
     var _S22 : VertexSample_0 = v_4;
-    _S22.position_0 = c_3.positionMC_0.xyz;
-    _S22.normal_0 = c_3.normalMC_0;
-    _S22.tangent_0 = c_3.tangentMC_0;
-    _S22.uv_2 = c_3.uv_1;
-    _S22.color_2 = c_3.color_1;
+    _S22.position_0 = c_2.positionMC_0.xyz;
+    _S22.normal_0 = c_2.normalMC_0;
+    _S22.tangent_0 = c_2.tangentMC_0;
+    _S22.uv_2 = c_2.uv_1;
+    _S22.color_2 = c_2.color_1;
     return _S22;
 }
 
-fn shadeVertex_0( v_5 : VertexSample_0,  c_4 : ptr<function, VertexContext_0>) -> VertexSample_0
+fn shadeVertex_0( v_5 : VertexSample_0,  c_3 : ptr<function, VertexContext_0>) -> VertexSample_0
 {
     var _S23 : VertexSample_0 = IdentityVertex_modify_0(v_5);
-    (*c_4) = vertexContext_0(_S23);
-    IShaderHooks_vertexx24defaultImpl_0(&((*c_4)));
-    return vertexSample_0((*c_4), _S23);
+    (*c_3) = vertexContext_0(_S23);
+    IShaderHooks_vertexx24defaultImpl_0(&((*c_3)));
+    return vertexSample_0((*c_3), _S23);
 }
 
-fn VertexSample_x24init_0( position_3 : vec3<f32>,  normal_3 : vec3<f32>,  tangent_3 : vec3<f32>,  uv_6 : vec2<f32>,  color_7 : vec4<f32>,  pointId_3 : u32,  cellId_6 : u32,  primitiveId_6 : u32,  modelToClip_3 : mat4x4<f32>) -> VertexSample_0
+fn VertexSample_x24init_0( position_3 : vec3<f32>,  normal_3 : vec3<f32>,  tangent_3 : vec3<f32>,  uv_6 : vec2<f32>,  color_6 : vec4<f32>,  pointId_3 : u32,  cellId_6 : u32,  primitiveId_6 : u32,  modelToClip_3 : mat4x4<f32>) -> VertexSample_0
 {
     var _S24 : VertexSample_0;
     _S24.position_0 = position_3;
     _S24.normal_0 = normal_3;
     _S24.tangent_0 = tangent_3;
     _S24.uv_2 = uv_6;
-    _S24.color_2 = color_7;
+    _S24.color_2 = color_6;
     _S24.pointId_1 = pointId_3;
     _S24.cellId_2 = cellId_6;
     _S24.primitiveId_2 = primitiveId_6;
@@ -659,7 +658,7 @@ fn pbr_getColor_0( i_4 : u32) -> vec4<f32>
     return vec4<f32>(colors_0[_S30], colors_0[_S30 + u32(1)], colors_0[_S30 + u32(2)], colors_0[_S30 + u32(3)]);
 }
 
-fn pbr_fetchVertex_0( triIdx_1 : u32,  idx_0 : u32,  c_5 : ptr<function, VertexContext_0>) -> VertexSample_0
+fn pbr_fetchVertex_0( triIdx_1 : u32,  idx_0 : u32,  c_4 : ptr<function, VertexContext_0>) -> VertexSample_0
 {
     var _S31 : vec3<f32> = vec3<f32>(0.0f);
     var v_6 : VertexSample_0 = VertexSample_x24init_0(_S31, vec3<f32>(0.0f, 0.0f, 1.0f), _S31, vec2<f32>(0.0f), vec4<f32>(1.0f), u32(0), u32(0), u32(0), mat4x4<f32>(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f));
@@ -685,11 +684,11 @@ fn pbr_fetchVertex_0( triIdx_1 : u32,  idx_0 : u32,  c_5 : ptr<function, VertexC
     v_6.cellId_2 = triIdx_1;
     v_6.primitiveId_2 = triIdx_1;
     v_6.modelToClip_1 = mat4x4<f32>(params_0.mvp_0.data_0[i32(0)][i32(0)], params_0.mvp_0.data_0[i32(1)][i32(0)], params_0.mvp_0.data_0[i32(2)][i32(0)], params_0.mvp_0.data_0[i32(3)][i32(0)], params_0.mvp_0.data_0[i32(0)][i32(1)], params_0.mvp_0.data_0[i32(1)][i32(1)], params_0.mvp_0.data_0[i32(2)][i32(1)], params_0.mvp_0.data_0[i32(3)][i32(1)], params_0.mvp_0.data_0[i32(0)][i32(2)], params_0.mvp_0.data_0[i32(1)][i32(2)], params_0.mvp_0.data_0[i32(2)][i32(2)], params_0.mvp_0.data_0[i32(3)][i32(2)], params_0.mvp_0.data_0[i32(0)][i32(3)], params_0.mvp_0.data_0[i32(1)][i32(3)], params_0.mvp_0.data_0[i32(2)][i32(3)], params_0.mvp_0.data_0[i32(3)][i32(3)]);
-    var _S33 : VertexSample_0 = shadeVertex_0(v_6, &((*c_5)));
+    var _S33 : VertexSample_0 = shadeVertex_0(v_6, &((*c_4)));
     return _S33;
 }
 
-fn edgeFunction_0( a_0 : vec2<f32>,  b_0 : vec2<f32>,  c_6 : vec2<f32>) -> f32
+fn edgeFunction_0( a_0 : vec2<f32>,  b_0 : vec2<f32>,  c_5 : vec2<f32>) -> f32
 {
     var _S34 : f32 = a_0.x;
     var _S35 : f32 = b_0.x;
@@ -729,7 +728,7 @@ fn edgeFunction_0( a_0 : vec2<f32>,  b_0 : vec2<f32>,  c_6 : vec2<f32>) -> f32
     }
     var _S36 : f32 = p_0.x;
     var _S37 : f32 = p_0.y;
-    var e_0 : f32 = (c_6.x - _S36) * (q_0.y - _S37) - (c_6.y - _S37) * (q_0.x - _S36);
+    var e_0 : f32 = (c_5.x - _S36) * (q_0.y - _S37) - (c_5.y - _S37) * (q_0.x - _S36);
     var _S38 : f32;
     if(swap_0)
     {
@@ -863,7 +862,7 @@ fn interpolateDepth_0( t_5 : ScreenTriangle_0,  w_3 : vec3<f32>) -> f32
     return w_3.x * t_5.s0_0.z + w_3.y * t_5.s1_0.z + w_3.z * t_5.s2_0.z;
 }
 
-fn FragmentContext_x24init_0( positionVC_1 : vec4<f32>,  normalVC_1 : vec3<f32>,  tangentVC_1 : vec3<f32>,  uv_7 : vec2<f32>,  ambientColor_5 : vec3<f32>,  diffuseColor_1 : vec3<f32>,  specularColor_5 : vec3<f32>,  specularPower_5 : f32,  opacity_5 : f32,  color_8 : vec4<f32>,  depth_2 : f32,  ids_1 : vec4<u32>,  fragCoord_3 : vec4<f32>,  primitiveId_7 : u32,  cellId_7 : u32,  frontFacing_3 : bool) -> FragmentContext_0
+fn FragmentContext_x24init_0( positionVC_1 : vec4<f32>,  normalVC_1 : vec3<f32>,  tangentVC_1 : vec3<f32>,  uv_7 : vec2<f32>,  ambientColor_5 : vec3<f32>,  diffuseColor_1 : vec3<f32>,  specularColor_5 : vec3<f32>,  specularPower_5 : f32,  opacity_5 : f32,  color_7 : vec4<f32>,  depth_2 : f32,  ids_1 : vec4<u32>,  fragCoord_3 : vec4<f32>,  primitiveId_7 : u32,  cellId_7 : u32,  frontFacing_3 : bool) -> FragmentContext_0
 {
     var _S67 : FragmentContext_0;
     _S67.positionVC_0 = positionVC_1;
@@ -875,7 +874,7 @@ fn FragmentContext_x24init_0( positionVC_1 : vec4<f32>,  normalVC_1 : vec3<f32>,
     _S67.specularColor_0 = specularColor_5;
     _S67.specularPower_0 = specularPower_5;
     _S67.opacity_0 = opacity_5;
-    _S67.color_0 = color_8;
+    _S67.color_0 = color_7;
     _S67.depth_0 = depth_2;
     _S67.ids_0 = ids_1;
     _S67.fragCoord_0 = fragCoord_3;
@@ -914,10 +913,10 @@ fn pbr_fragment_0( r_4 : PBRTriangle_0,  w_4 : vec3<f32>,  px_1 : i32,  py_1 : i
     return f_14;
 }
 
-fn pbr_fragmentDepth_0( source_2 : PBRSource_0,  f_15 : ptr<function, FragmentContext_0>,  s_15 : ptr<function, SurfaceSample_0>,  depth_4 : ptr<function, f32>) -> bool
+fn pbr_fragmentDepth_0( source_2 : PBRSource_0,  f_15 : ptr<function, FragmentContext_0>,  s_17 : ptr<function, SurfaceSample_0>,  depth_4 : ptr<function, f32>) -> bool
 {
     (*depth_4) = (*f_15).depth_0;
-    var _S76 : bool = surfaceCoverage_0(source_2, &((*f_15)), &((*s_15)));
+    var _S76 : bool = surfaceCoverage_0(source_2, &((*f_15)), &((*s_17)));
     if(!_S76)
     {
         return false;
@@ -974,9 +973,9 @@ fn pbr_depth_main(@builtin(global_invocation_id) gid_0 : vec3<u32>)
             }
             var source_3 : PBRSource_0 = PBRSource_x24init_0(r_5, w_5);
             var f_16 : FragmentContext_0 = pbr_fragment_0(r_5, w_5, px_2, py_2, interpolateDepth_0(r_5.t_0, w_5));
-            var s_16 : SurfaceSample_0;
+            var s_18 : SurfaceSample_0;
             var depth_5 : f32;
-            var _S78 : bool = pbr_fragmentDepth_0(source_3, &(f_16), &(s_16), &(depth_5));
+            var _S78 : bool = pbr_fragmentDepth_0(source_3, &(f_16), &(s_18), &(depth_5));
             if(!_S78)
             {
                 px_2 = px_2 + i32(1);
@@ -1033,9 +1032,9 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
             }
             var source_4 : PBRSource_0 = PBRSource_x24init_0(r_6, w_6);
             var f_17 : FragmentContext_0 = pbr_fragment_0(r_6, w_6, px_3, py_3, interpolateDepth_0(r_6.t_0, w_6));
-            var s_17 : SurfaceSample_0;
+            var s_19 : SurfaceSample_0;
             var depth_6 : f32;
-            var _S81 : bool = pbr_fragmentDepth_0(source_4, &(f_17), &(s_17), &(depth_6));
+            var _S81 : bool = pbr_fragmentDepth_0(source_4, &(f_17), &(s_19), &(depth_6));
             if(!_S81)
             {
                 px_3 = px_3 + i32(1);
@@ -1049,7 +1048,7 @@ fn pbr_main(@builtin(global_invocation_id) gid_1 : vec3<u32>)
                 px_3 = px_3 + i32(1);
                 continue;
             }
-            var _S84 : bool = surfaceShade_0(source_4, &(f_17), s_17);
+            var _S84 : bool = surfaceShade_0(source_4, &(f_17), s_19);
             if(!_S84)
             {
                 px_3 = px_3 + i32(1);

@@ -1310,13 +1310,8 @@ void Frame::softwareRasterize()
                           Lo.y+ambientRad*baseRGB.y,
                           Lo.z+ambientRad*baseRGB.z);
 
-              auto rh = [](float c){ return c/(c+1.f); };
-              auto gm = [](float c){ return std::pow(std::max(c,0.f), 1.f/2.2f); };
-              float3 tonemapped{gm(rh(Lo.x)), gm(rh(Lo.y)), gm(rh(Lo.z))};
-
               float3 em = pbrMat->evalEmissive(uv);
-              fragColor = float4(tonemapped.x + em.x, tonemapped.y + em.y,
-                                 tonemapped.z + em.z, bc.w);
+              fragColor = float4(Lo.x + em.x, Lo.y + em.y, Lo.z + em.z, bc.w);
 
               float op = pbrMat->evalOpacity(uv, bc.w);
               if (op <= 0.f) continue;
