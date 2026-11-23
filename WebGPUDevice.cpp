@@ -73,6 +73,20 @@ void deviceLostCallback(WGPUDevice const* /*device*/, WGPUDeviceLostReason reaso
 namespace anari_webgpu
 {
 
+// Data Arrays ////////////////////////////////////////////////////////////////
+
+void *WebGPUDevice::mapArray(ANARIArray a)
+{
+  deviceState()->renderingSemaphore.arrayMapAcquire();
+  return helium::BaseDevice::mapArray(a);
+}
+
+void WebGPUDevice::unmapArray(ANARIArray a)
+{
+  helium::BaseDevice::unmapArray(a);
+  deviceState()->renderingSemaphore.arrayMapRelease();
+}
+
 // API Objects ////////////////////////////////////////////////////////////////
 
 ANARIArray1D WebGPUDevice::newArray1D(const void* appMemory, ANARIMemoryDeleter deleter,
@@ -245,6 +259,7 @@ WebGPUDevice::WebGPUDevice(ANARILibrary l)
 WebGPUDevice::~WebGPUDevice()
 {
   auto& state = *deviceState();
+  state.taskQueue.flush();
   state.commitBuffer.clear();
   reportMessage(ANARI_SEVERITY_DEBUG, "destroying WebGPU device (%p)", this);
 }

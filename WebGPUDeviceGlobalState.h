@@ -4,7 +4,9 @@
 #pragma once
 
 // helium
+#include "RenderingSemaphore.h"
 #include "helium/BaseGlobalDeviceState.h"
+#include "helium/TaskQueue.h"
 
 // Forward-declare wgpu types to avoid pulling in webgpu.h everywhere.
 // The actual header is only included in implementation files that need it.
@@ -30,6 +32,9 @@ struct WebGPUDeviceGlobalState : public helium::BaseGlobalDeviceState
   bool ownsAdapter{true};
   bool ownsDevice{true};
   bool ownsQueue{true};
+
+  helium::tasking::TaskQueue taskQueue{64};
+  RenderingSemaphore renderingSemaphore;
 
   WebGPUDeviceGlobalState(ANARIDevice d);
   ~WebGPUDeviceGlobalState();

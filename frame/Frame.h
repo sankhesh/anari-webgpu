@@ -51,7 +51,7 @@ struct Frame : public helium::BaseFrame
   void discard() override;
 
   bool ready() const;
-  void wait() const;
+  void wait();
 
   // --- Shared resource access ---
   WGPUBuffer colorStorageBuffer() const { return m_colorStorageBuf; }
@@ -93,6 +93,8 @@ struct Frame : public helium::BaseFrame
   void writeSample(int x, int y, const PixelSample &s);
   uint32_t outputIndex(int x, int y) const;
 
+  void render();
+  void waitOnOutstandingWorkIfNeeded();
   void depthToDistance();
   void softwareRasterize();
   void softwareRaymarchVolume();
@@ -115,6 +117,7 @@ struct Frame : public helium::BaseFrame
   helium::IntrusivePtr<World> m_world;
 
   float m_duration{0.f};
+  helium::tasking::Future m_future;
 
   slangkit::Compiler m_slangCompiler;
 

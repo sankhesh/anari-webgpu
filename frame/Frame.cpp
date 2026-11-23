@@ -64,6 +64,7 @@ WebGPUDeviceGlobalState *Frame::deviceState() const
 
 void Frame::commitParameters()
 {
+  waitOnOutstandingWorkIfNeeded();
   m_renderer = getParamObject<Renderer>("renderer");
   m_camera = getParamObject<Camera>("camera");
   m_world = getParamObject<World>("world");
@@ -74,6 +75,7 @@ void Frame::commitParameters()
 
 void Frame::finalize()
 {
+  waitOnOutstandingWorkIfNeeded();
   if (!m_renderer)
     reportMessage(ANARI_SEVERITY_WARNING, "missing required parameter 'renderer' on frame");
   if (!m_camera)
@@ -558,6 +560,8 @@ bool Frame::getProperty(const std::string_view &name,
     ANARIDataType type, void *ptr, uint64_t size, uint32_t flags)
 {
   if (type == ANARI_FLOAT32 && name == "duration") {
+    if (flags & ANARI_WAIT)
+      wait();
     helium::writeToVoidP(ptr, m_duration);
     return true;
   }
@@ -633,9 +637,21 @@ static Image2DUniforms image2DUniforms(const Image2DSampler *s)
 
 void Frame::renderFrame()
 {
+  auto *state = deviceState();
+  wait();
+  refInc(helium::RefType::INTERNAL);
+  state->taskQueue.enqueue([state]() { state->commitBuffer.flush(); });
+  m_future = state->taskQueue.enqueue([this, state]() {
+    state->renderingSemaphore.frameStart();
+    render();
+    state->renderingSemaphore.frameEnd();
+  });
+}
+
+void Frame::render()
+{
   auto start = std::chrono::steady_clock::now();
   auto *state = deviceState();
-  state->commitBuffer.flush();
 
   if (!m_valid || !m_world || m_size.x == 0 || m_size.y == 0)
     goto done;
@@ -1477,8 +1493,25 @@ int Frame::frameReady(ANARIWaitMask m)
   wait(); return 1;
 }
 void Frame::discard() {}
-bool Frame::ready() const { return true; }
-void Frame::wait() const {}
+
+bool Frame::ready() const
+{
+  return !m_future.valid() || helium::tasking::isReady(m_future);
+}
+
+void Frame::wait()
+{
+  if (m_future.valid()) {
+    m_future.get();
+    refDec(helium::RefType::INTERNAL);
+  }
+}
+
+void Frame::waitOnOutstandingWorkIfNeeded()
+{
+  if (!deviceState()->taskQueue.onWorkerThread())
+    wait();
+}
 
 uint32_t Frame::outputIndex(int x, int y) const
 {
