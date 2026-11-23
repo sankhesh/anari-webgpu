@@ -28,9 +28,10 @@ struct RasterUniforms
     uint     numTriangles;
     uint     hasNormals;
     uint     hasColors;
+    uint     alphaMode;
+    float    alphaCutoff;
     uint     _pad0;
-    uint     _pad1;
-    uint     _pad2;
+    Image2DParams image;
 };
 
 [vk::binding(0, 0)] RWStructuredBuffer<float4>       colorBuf;
@@ -40,12 +41,18 @@ struct RasterUniforms
 [vk::binding(4, 0)] StructuredBuffer<float>          normals;
 [vk::binding(5, 0)] StructuredBuffer<float>          colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>           indices;
+[vk::binding(7, 0)] StructuredBuffer<float4>         texels;
 ParameterBlock<Shading<M, L, N, O, V>>               shading;
 ParameterBlock<HookBlock<H>>                         hookBlock;
 
 float3 getPosition(uint i) { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 getNormal(uint i)   { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
 float4 getColor(uint i)    { return float4(colors[i*4u],    colors[i*4u+1u],    colors[i*4u+2u],    colors[i*4u+3u]); }
+
+struct Texels : ITexels
+{
+    float4 texel(uint i) { return texels[i]; }
+};
 
 uint3 triangleIndices(uint triIdx)
 {
@@ -117,8 +124,10 @@ struct RasterSource : ISurfaceSource
 
     void colors(inout FragmentContext f)
     {
-        float4 color = (r.v0.color * params.materialColor)*w.x + (r.v1.color * params.materialColor)*w.y
-                     + (r.v2.color * params.materialColor)*w.z;
+        float4 color = r.v0.color*w.x + r.v1.color*w.y + r.v2.color*w.z;
+        if (params.image.enabled != 0u)
+            color = sampleImage2D(Texels(), params.image, color);
+        color = color * params.materialColor;
         f.diffuseColor = color.rgb;
         f.opacity      = color.a;
     }
@@ -138,6 +147,17 @@ struct RasterSource : ISurfaceSource
         return light;
     }
     float3 ambientRadiance(SurfaceSample s) { return float3(params.ambientRadiance); }
+    override bool opacity(MaterialSample m, inout float4 color)
+    {
+        if (params.alphaMode == 2u) {
+            if (m.opacity < params.alphaCutoff)
+                return false;
+            color.a = 1.f;
+        } else if (params.alphaMode != 1u) {
+            color.a = 1.f;
+        }
+        return true;
+    }
 };
 
 bool fragmentDepth(RasterSource source, inout FragmentContext f, out SurfaceSample s,

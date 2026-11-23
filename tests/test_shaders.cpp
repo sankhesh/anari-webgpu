@@ -215,7 +215,7 @@ public struct ToonLighting : ILightingModel {
       "raster takes a consumer IMaterial; its uniforms land in group 1, group 0 is unchanged");
   if (!r)
     std::printf("%s", r.diagnostics.c_str());
-  check(group0 == 7, "the override leaves the host's 7 group-0 bindings intact");
+  check(group0 == 8, "the override leaves the host's 8 group-0 bindings intact");
 
   slangkit::CompileOptions toon;
   toon.modules = {stripes};

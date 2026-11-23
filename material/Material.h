@@ -38,12 +38,15 @@ struct Material : public Object
       std::string_view subtype, WebGPUDeviceGlobalState *s);
 
   const SlangOverride &slangOverride() const { return m_slangOverride; }
-  bool usesColorAttribute() const { return m_usesColorAttribute; }
+  const std::string &colorAttribute() const { return m_colorAttribute; }
+  const Image2DSampler *colorSampler() const { return m_colorSampler.ptr; }
 
  protected:
   void commitSlangParameters();
+  float4 commitColor(const char *name, float4 defaultColor);
 
-  bool m_usesColorAttribute{false};
+  std::string m_colorAttribute;
+  helium::IntrusivePtr<Image2DSampler> m_colorSampler;
 
  private:
   SlangOverride m_slangOverride;
@@ -57,17 +60,15 @@ struct MatteMaterial : public Material
   void commitParameters() override;
   bool isValid() const override;
 
-  float4 evalColor(float2 uv) const;
-
   float evalOpacity(float2 uv, float colorAlpha) const;
 
   float4 color() const;
 
   AlphaMode alphaMode() const;
+  float alphaCutoff() const { return m_alphaCutoff; }
 
  private:
   float4 m_color{0.8f, 0.8f, 0.8f, 1.f};
-  helium::IntrusivePtr<Sampler> m_colorSampler;
 
   float m_opacity{1.f};
   helium::IntrusivePtr<Sampler> m_opacitySampler;
@@ -91,7 +92,6 @@ struct PhysicallyBasedMaterial : public Material
   AlphaMode alphaMode() const;
   float alphaCutoff() const;
 
-  float4 evalBaseColor(float2 uv) const;
   float2 evalMetallicRoughness(float2 uv) const;
   float3 evalEmissive(float2 uv) const;
   float evalOpacity(float2 uv, float baseAlpha) const;
@@ -104,7 +104,6 @@ struct PhysicallyBasedMaterial : public Material
   float m_emissiveStrength{1.f};
   float m_opacity{1.f};
 
-  helium::IntrusivePtr<Sampler> m_baseColorSampler;
   helium::IntrusivePtr<Sampler> m_metallicRoughnessSampler;
   helium::IntrusivePtr<Sampler> m_normalSampler;
   helium::IntrusivePtr<Sampler> m_emissiveSampler;

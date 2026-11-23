@@ -13,6 +13,7 @@
       "khr_material_physically_based",
       "khr_renderer_ambient_light",
       "khr_renderer_background_color",
+      "khr_sampler_image2d",
       "khr_spatial_field_structured_regular",
       "khr_volume_transfer_function1d",
       "webgpu_material_slang"
@@ -165,6 +166,58 @@
           "tags": [],
           "default": "attribute0",
           "description": "vertex attribute to use as texture coordinate"
+        },
+        {
+          "name": "filter",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "linear",
+          "values": ["nearest", "linear"],
+          "description": "filter used when sampling the image"
+        },
+        {
+          "name": "wrapMode1",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "clampToEdge",
+          "values": ["clampToEdge", "repeat", "mirrorRepeat"],
+          "description": "wrap mode for the first coordinate"
+        },
+        {
+          "name": "wrapMode2",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "clampToEdge",
+          "values": ["clampToEdge", "repeat", "mirrorRepeat"],
+          "description": "wrap mode for the second coordinate"
+        },
+        {
+          "name": "inTransform",
+          "types": ["ANARI_FLOAT32_MAT4"],
+          "tags": [],
+          "default": [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+          "description": "transform applied to the input attribute"
+        },
+        {
+          "name": "inOffset",
+          "types": ["ANARI_FLOAT32_VEC4"],
+          "tags": [],
+          "default": [0,0,0,0],
+          "description": "offset added to the transformed input attribute"
+        },
+        {
+          "name": "outTransform",
+          "types": ["ANARI_FLOAT32_MAT4"],
+          "tags": [],
+          "default": [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+          "description": "transform applied to the sampled value"
+        },
+        {
+          "name": "outOffset",
+          "types": ["ANARI_FLOAT32_VEC4"],
+          "tags": [],
+          "default": [0,0,0,0],
+          "description": "offset added to the transformed sampled value"
         }
       ]
     },

@@ -14,7 +14,7 @@ struct TestScene {
   ANARIDevice device; ANARIWorld world; ANARICamera camera; ANARIRenderer renderer; ANARIFrame frame; int width, height;
 };
 
-static TestScene createBasicTriangleScene(int w, int h, ANARIDataType colorArrayType = ANARI_FLOAT32_VEC4, const void *colorArrayData = nullptr, bool colorAttribute = true, const char *colorParam = "vertex.color") {
+static TestScene createBasicTriangleScene(int w, int h, ANARIDataType colorArrayType = ANARI_FLOAT32_VEC4, const void *colorArrayData = nullptr, bool colorAttribute = true, const char *colorParam = "vertex.color", const float *samplerOffset = nullptr) {
   TestScene s{}; s.width = w; s.height = h;
   ANARILibrary lib = anariLoadLibrary("webgpu", statusFunc, nullptr); assert(lib);
   s.device = anariNewDevice(lib, "default"); assert(s.device);
@@ -29,10 +29,24 @@ static TestScene createBasicTriangleScene(int w, int h, ANARIDataType colorArray
   anariSetParameter(s.device, geom, "vertex.position", ANARI_ARRAY1D, &posArr);
   anariSetParameter(s.device, geom, colorParam, ANARI_ARRAY1D, &colArr);
   anariSetParameter(s.device, geom, "vertex.normal", ANARI_ARRAY1D, &normArr);
+  float uvs[] = {0.1f,0.f, 0.4f,0.f, 0.25f,1.f};
+  ANARIArray1D uvArr = anariNewArray1D(s.device, uvs, 0, 0, ANARI_FLOAT32_VEC2, 3);
+  anariSetParameter(s.device, geom, "vertex.attribute0", ANARI_ARRAY1D, &uvArr);
+  anariRelease(s.device, uvArr);
   anariCommitParameters(s.device, geom);
   ANARIMaterial mat = anariNewMaterial(s.device, "matte");
   float matColor[] = {1,1,1,1};
-  if (colorAttribute) anariSetParameter(s.device, mat, "color", ANARI_STRING, "color");
+  if (samplerOffset) {
+    const uint8_t texels[] = {255,0,0,255, 0,255,0,0};
+    ANARISampler smp = anariNewSampler(s.device, "image2D");
+    ANARIArray2D img = anariNewArray2D(s.device, texels, 0, 0, ANARI_UFIXED8_VEC4, 2, 1);
+    anariSetParameter(s.device, smp, "image", ANARI_ARRAY2D, &img);
+    anariSetParameter(s.device, smp, "filter", ANARI_STRING, "nearest");
+    anariSetParameter(s.device, smp, "inOffset", ANARI_FLOAT32_VEC4, samplerOffset);
+    anariCommitParameters(s.device, smp);
+    anariSetParameter(s.device, mat, "color", ANARI_SAMPLER, &smp);
+    anariRelease(s.device, img); anariRelease(s.device, smp);
+  } else if (colorAttribute) anariSetParameter(s.device, mat, "color", ANARI_STRING, "color");
   else anariSetParameter(s.device, mat, "color", ANARI_FLOAT32_VEC4, matColor);
   anariCommitParameters(s.device, mat);
   ANARISurface surf = anariNewSurface(s.device);
@@ -132,6 +146,21 @@ static void test_vertex_color_types() {
     anariUnmapFrame(s.device, s.frame, "channel.color"); destroyScene(s);
   } printf(" PASSED\n");
 }
+static void test_image_sampler() {
+  printf("  test_image_sampler...");
+  const float offsets[][4] = {{0,0,0,0}, {0.5f,0,0,0}};
+  for (int c = 0; c < 2; c++) {
+    TestScene s = createBasicTriangleScene(64, 64, ANARI_FLOAT32_VEC4, nullptr, false, "vertex.color", offsets[c]);
+    anariRenderFrame(s.device, s.frame); anariFrameReady(s.device, s.frame, ANARI_WAIT);
+    uint32_t fbW, fbH; ANARIDataType fbType;
+    const uint8_t *px = (const uint8_t *)anariMapFrame(s.device, s.frame, "channel.color", &fbW, &fbH, &fbType);
+    assert(px); const uint8_t *p = px + ((fbH/2)*fbW + fbW/2)*4;
+    if (c == 0) assert(p[0] > 128 && p[1] == 0 && p[2] == 0);
+    else assert(p[0] == 0 && p[1] > 128 && p[2] == 0);
+    assert(p[3] == 255);
+    anariUnmapFrame(s.device, s.frame, "channel.color"); destroyScene(s);
+  } printf(" PASSED\n");
+}
 static void test_resolution_variants() {
   printf("  test_resolution_variants...");
   int sizes[][2] = {{16,16},{100,100},{256,128},{1,1}};
@@ -145,6 +174,6 @@ static void test_resolution_variants() {
 }
 int main() {
   printf("=== Triangle Rendering Tests ===\n");
-  test_framebuffer_valid(); test_triangle_visible(); test_depth_buffer(); test_vertex_color_types(); test_resolution_variants();
+  test_framebuffer_valid(); test_triangle_visible(); test_depth_buffer(); test_vertex_color_types(); test_image_sampler(); test_resolution_variants();
   printf("All triangle rendering tests passed.\n"); return 0;
 }

@@ -13,7 +13,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <initializer_list>
 #include <optional>
+#include <utility>
+#include <vector>
 
 // Context struct for buffer map callback
 struct MapContext {
@@ -282,11 +285,11 @@ void Frame::initComputeResources()
       return;
     }
 
-    WGPUBindGroupLayoutEntry entries[7] = {
+    WGPUBindGroupLayoutEntry entries[8] = {
         storageEntry(0, false), storageEntry(1, false), uniformEntry(2),
         storageEntry(3, true), storageEntry(4, true),
-        storageEntry(5, true), storageEntry(6, true)};
-    m_rasterBGL = makeBGL(device, entries, 7);
+        storageEntry(5, true), storageEntry(6, true), storageEntry(7, true)};
+    m_rasterBGL = makeBGL(device, entries, 8);
     m_rasterPipeline = makePipeline(device, m_rasterShader, m_rasterBGL,
         "anari_raster_pipeline", "main");
     m_rasterDepthPipeline = makePipeline(device, m_rasterShader, m_rasterBGL,
@@ -301,11 +304,11 @@ void Frame::initComputeResources()
       return;
     }
 
-    WGPUBindGroupLayoutEntry entries[7] = {
+    WGPUBindGroupLayoutEntry entries[8] = {
         storageEntry(0, false), storageEntry(1, false), uniformEntry(2),
         storageEntry(3, true), storageEntry(4, true),
-        storageEntry(5, true), storageEntry(6, true)};
-    m_pbrBGL = makeBGL(device, entries, 7);
+        storageEntry(5, true), storageEntry(6, true), storageEntry(7, true)};
+    m_pbrBGL = makeBGL(device, entries, 8);
     m_pbrPipeline = makePipeline(device, m_pbrShader, m_pbrBGL,
         "anari_pbr_pipeline", "pbr_main");
     m_pbrDepthPipeline = makePipeline(device, m_pbrShader, m_pbrBGL,
@@ -577,29 +580,53 @@ static WGPUBuffer uploadStorage(WGPUDevice device, WGPUQueue queue,
   return buf;
 }
 
-static WGPUBindGroup makeBindGroup7(WGPUDevice device, WGPUBindGroupLayout bgl,
-    WGPUBuffer b0, uint64_t s0,
-    WGPUBuffer b1, uint64_t s1,
-    WGPUBuffer b2, uint64_t s2,
-    WGPUBuffer b3, uint64_t s3,
-    WGPUBuffer b4, uint64_t s4,
-    WGPUBuffer b5, uint64_t s5,
-    WGPUBuffer b6, uint64_t s6)
+static WGPUBindGroup makeBindGroup(WGPUDevice device, WGPUBindGroupLayout bgl,
+    std::initializer_list<std::pair<WGPUBuffer, uint64_t>> buffers)
 {
-  WGPUBindGroupEntry e[7]{};
-  auto setE = [&](int i, WGPUBuffer buf, uint64_t sz){
-    e[i].binding = (uint32_t)i; e[i].buffer = buf;
-    e[i].offset = 0; e[i].size = sz;
-  };
-  setE(0,b0,s0); setE(1,b1,s1); setE(2,b2,s2); setE(3,b3,s3);
-  setE(4,b4,s4); setE(5,b5,s5); setE(6,b6,s6);
+  std::vector<WGPUBindGroupEntry> e(buffers.size());
+  uint32_t i = 0;
+  for (const auto &b : buffers) {
+    e[i].binding = i; e[i].buffer = b.first;
+    e[i].offset = 0; e[i].size = b.second;
+    i++;
+  }
 
   WGPUBindGroupDescriptor bgDesc{};
   bgDesc.nextInChain = nullptr;
   bgDesc.layout = bgl;
-  bgDesc.entryCount = 7;
-  bgDesc.entries = e;
+  bgDesc.entryCount = e.size();
+  bgDesc.entries = e.data();
   return wgpuDeviceCreateBindGroup(device, &bgDesc);
+}
+
+struct Image2DUniforms
+{
+  float inTransform[16];
+  float inOffset[4];
+  float outTransform[16];
+  float outOffset[4];
+  uint32_t enabled, width, height, linearFilter, wrap1, wrap2, _pad[2];
+};
+
+static Image2DUniforms image2DUniforms(const Image2DSampler *s)
+{
+  Image2DUniforms u{};
+  const Image2DSampler::Params p = s ? s->params() : Image2DSampler::Params{};
+  for (int c = 0; c < 4; c++) {
+    for (int r = 0; r < 4; r++) {
+      u.inTransform[c*4+r] = p.inTransform[c][r];
+      u.outTransform[c*4+r] = p.outTransform[c][r];
+    }
+    u.inOffset[c] = p.inOffset[c];
+    u.outOffset[c] = p.outOffset[c];
+  }
+  u.enabled = s ? 1 : 0;
+  u.width = s ? s->width() : 1;
+  u.height = s ? s->height() : 1;
+  u.linearFilter = p.linearFilter ? 1 : 0;
+  u.wrap1 = static_cast<uint32_t>(p.wrap1);
+  u.wrap2 = static_cast<uint32_t>(p.wrap2);
+  return u;
 }
 
 // ---------------------------------------------------------------------------
@@ -708,11 +735,15 @@ void Frame::renderFrame()
             const float    *pos  = geom->vertexPositions();
             const float    *norm = geom->vertexNormals();
             const uint32_t *idx  = geom->indices();
-            const bool perPrimitive = geom->colorsPerPrimitive();
+            const auto *material = surf->material();
+            bool perPrimitive = false;
             std::vector<float4> colors;
-            if (surf->material() && surf->material()->usesColorAttribute())
-              colors = perPrimitive ? geom->primitiveColors() : geom->vertexColors();
+            if (material && !material->colorAttribute().empty())
+              colors = geom->attribute(material->colorAttribute(), perPrimitive);
             const float    *col  = colors.empty() ? nullptr : &colors[0].x;
+            const Image2DSampler *image = material ? material->colorSampler() : nullptr;
+            std::vector<float4> texels = image ? image->texels()
+                                               : std::vector<float4>(1, float4(1.f, 1.f, 1.f, 1.f));
 
             std::vector<uint32_t> indexData;
             if (idx) {
@@ -734,6 +765,8 @@ void Frame::renderFrame()
             WGPUBuffer normBuf = uploadStorage(device, queue, norm ? norm : dummyNorm, normSize, "norm");
             WGPUBuffer colBuf  = uploadStorage(device, queue, col  ? col  : dummyCol,  colSize,  "col");
             WGPUBuffer idxBuf  = uploadStorage(device, queue, indexData.data(), idxSize, "idx");
+            uint64_t texSize   = texels.size() * sizeof(float4);
+            WGPUBuffer texBuf  = uploadStorage(device, queue, texels.data(), texSize, "tex");
 
             auto *pbrMat  = dynamic_cast<const PhysicallyBasedMaterial *>(surf->material());
             auto *matteMat = dynamic_cast<const MatteMaterial *>(surf->material());
@@ -748,6 +781,7 @@ void Frame::renderFrame()
                 float lightColor[3]; float lightIrradiance;
                 uint32_t width, height, numTriangles, hasNormals;
                 uint32_t hasColors; uint32_t alphaMode; float alphaCutoff; uint32_t _pad;
+                Image2DUniforms image;
               } pu;
 
               for (int c=0;c<4;c++) for (int r=0;r<4;r++) pu.mvp[c*4+r]=mvp[c][r];
@@ -768,14 +802,14 @@ void Frame::renderFrame()
               pu.hasNormals=norm?1:0; pu.hasColors=col?(perPrimitive?2:1):0;
               pu.alphaMode   = static_cast<uint32_t>(pbrMat->alphaMode());
               pu.alphaCutoff = pbrMat->alphaCutoff();
+              pu.image       = image2DUniforms(image);
 
               WGPUBuffer ub = uploadUniform(device, queue, &pu, sizeof(pu));
 
-              WGPUBindGroup bg = makeBindGroup7(device, m_pbrBGL,
-                  m_colorStorageBuf, numPixels*16ULL,
-                  m_depthStorageBuf, numPixels*4ULL,
-                  ub, sizeof(pu),
-                  posBuf, posSize, normBuf, normSize, colBuf, colSize, idxBuf, idxSize);
+              WGPUBindGroup bg = makeBindGroup(device, m_pbrBGL,
+                  {{m_colorStorageBuf, numPixels*16ULL}, {m_depthStorageBuf, numPixels*4ULL},
+                   {ub, sizeof(pu)}, {posBuf, posSize}, {normBuf, normSize},
+                   {colBuf, colSize}, {idxBuf, idxSize}, {texBuf, texSize}});
 
               const SlangPipelines *sp = pbrMat->slangOverride().active()
                   ? slangPipelines(device, "pbr", m_pbrBGL, "pbr_main", "pbr_depth_main", pbrMat->slangOverride())
@@ -828,7 +862,8 @@ void Frame::renderFrame()
                 float materialColor[4];
                 float lightDir[3]; float ambientRadiance;
                 uint32_t width, height, numTriangles, hasNormals;
-                uint32_t hasColors; uint32_t _pad[3];
+                uint32_t hasColors, alphaMode; float alphaCutoff; uint32_t _pad;
+                Image2DUniforms image;
               } ru;
 
               for (int c=0;c<4;c++) for (int r=0;r<4;r++) ru.mvp[c*4+r]=mvp[c][r];
@@ -839,14 +874,16 @@ void Frame::renderFrame()
               ru.width=m_size.x; ru.height=m_size.y;
               ru.numTriangles=numTris;
               ru.hasNormals=norm?1:0; ru.hasColors=col?(perPrimitive?2:1):0;
+              ru.alphaMode = matteMat ? static_cast<uint32_t>(matteMat->alphaMode()) : 0;
+              ru.alphaCutoff = matteMat ? matteMat->alphaCutoff() : 0.5f;
+              ru.image = image2DUniforms(image);
 
               WGPUBuffer ub = uploadUniform(device, queue, &ru, sizeof(ru));
 
-              WGPUBindGroup bg = makeBindGroup7(device, m_rasterBGL,
-                  m_colorStorageBuf, numPixels*16ULL,
-                  m_depthStorageBuf, numPixels*4ULL,
-                  ub, sizeof(ru),
-                  posBuf, posSize, normBuf, normSize, colBuf, colSize, idxBuf, idxSize);
+              WGPUBindGroup bg = makeBindGroup(device, m_rasterBGL,
+                  {{m_colorStorageBuf, numPixels*16ULL}, {m_depthStorageBuf, numPixels*4ULL},
+                   {ub, sizeof(ru)}, {posBuf, posSize}, {normBuf, normSize},
+                   {colBuf, colSize}, {idxBuf, idxSize}, {texBuf, texSize}});
 
               const SlangPipelines *sp = matteMat && matteMat->slangOverride().active()
                   ? slangPipelines(device, "raster", m_rasterBGL, "main", "depth_main", matteMat->slangOverride())
@@ -895,6 +932,7 @@ void Frame::renderFrame()
             wgpuBufferRelease(normBuf);
             wgpuBufferRelease(colBuf);
             wgpuBufferRelease(idxBuf);
+            wgpuBufferRelease(texBuf);
           }
         }
       }
@@ -1137,12 +1175,14 @@ void Frame::softwareRasterize()
 
       const float    *positions = geom->vertexPositions();
       const float    *normals   = geom->vertexNormals();
-      const float    *texcoords = geom->vertexTexCoords();
-      const bool perPrimitive = geom->colorsPerPrimitive();
-      std::vector<float4> attributeColors;
-      if (surf->material() && surf->material()->usesColorAttribute())
-        attributeColors = perPrimitive ? geom->primitiveColors() : geom->vertexColors();
-      const float    *colors    = attributeColors.empty() ? nullptr : &attributeColors[0].x;
+      const auto *material = surf->material();
+      bool perPrimitive = false;
+      std::vector<float4> colors;
+      if (material && !material->colorAttribute().empty())
+        colors = geom->attribute(material->colorAttribute(), perPrimitive);
+      const Image2DSampler *image = material ? material->colorSampler() : nullptr;
+      bool perPrimitiveUV = false;
+      const std::vector<float4> texcoords = geom->attribute("attribute0", perPrimitiveUV);
       const uint32_t *indices   = geom->indices();
       uint32_t numTris          = geom->numTriangles();
 
@@ -1172,35 +1212,16 @@ void Frame::softwareRasterize()
           n0 = n1 = n2 = linalg::normalize(linalg::cross(p1-p0, p2-p0));
         }
 
-        float2 uv0{0,0}, uv1{0,0}, uv2{0,0};
-        if (texcoords) {
-          uv0={texcoords[i0*2], texcoords[i0*2+1]};
-          uv1={texcoords[i1*2], texcoords[i1*2+1]};
-          uv2={texcoords[i2*2], texcoords[i2*2+1]};
-        }
+        const float4 &t0 = texcoords[perPrimitiveUV ? t : i0];
+        const float4 &t1 = texcoords[perPrimitiveUV ? t : i1];
+        const float4 &t2 = texcoords[perPrimitiveUV ? t : i2];
+        float2 uv0{t0.x, t0.y}, uv1{t1.x, t1.y}, uv2{t2.x, t2.y};
 
-        const uint32_t j0 = perPrimitive ? t : i0;
-        const uint32_t j1 = perPrimitive ? t : i1;
-        const uint32_t j2 = perPrimitive ? t : i2;
-        float4 c0, c1, c2;
-        if (pbrMat) {
-          float4 bc = pbrMat->baseColor();
-          c0=c1=c2=bc;
-          if (colors) {
-            float4 vc0{colors[j0*4],colors[j0*4+1],colors[j0*4+2],colors[j0*4+3]};
-            float4 vc1{colors[j1*4],colors[j1*4+1],colors[j1*4+2],colors[j1*4+3]};
-            float4 vc2{colors[j2*4],colors[j2*4+1],colors[j2*4+2],colors[j2*4+3]};
-            c0=bc*vc0; c1=bc*vc1; c2=bc*vc2;
-          }
-        } else {
-          float4 mc = matteMat ? matteMat->color() : float4(0.8f,0.8f,0.8f,1.f);
-          c0=c1=c2=mc;
-          if (colors) {
-            float4 vc0{colors[j0*4],colors[j0*4+1],colors[j0*4+2],colors[j0*4+3]};
-            float4 vc1{colors[j1*4],colors[j1*4+1],colors[j1*4+2],colors[j1*4+3]};
-            float4 vc2{colors[j2*4],colors[j2*4+1],colors[j2*4+2],colors[j2*4+3]};
-            c0=mc*vc0; c1=mc*vc1; c2=mc*vc2;
-          }
+        float4 c0{1.f, 1.f, 1.f, 1.f}, c1 = c0, c2 = c0;
+        if (!colors.empty()) {
+          c0 = colors[perPrimitive ? t : i0];
+          c1 = colors[perPrimitive ? t : i1];
+          c2 = colors[perPrimitive ? t : i2];
         }
 
         auto transform = [&](float3 p) {
@@ -1252,13 +1273,13 @@ void Frame::softwareRasterize()
             float3 N = linalg::normalize(n0*w0 + n1*w1 + n2*w2);
             float3 L = linalg::normalize(-lightDir);
 
+            float4 attr = c0*w0 + c1*w1 + c2*w2;
+            if (image)
+              attr = image->eval(attr);
+
             float4 fragColor;
             if (pbrMat) {
-              float4 bc = pbrMat->evalBaseColor(uv);
-              if (colors) {
-                float4 vc = c0*w0+c1*w1+c2*w2;
-                bc = float4(bc.x*vc.x, bc.y*vc.y, bc.z*vc.z, bc.w*vc.w);
-              }
+              float4 bc = pbrMat->baseColor() * attr;
               float2 mr = pbrMat->evalMetallicRoughness(uv);
               float metallic  = mr.x;
               float roughness = mr.y;
@@ -1318,8 +1339,7 @@ void Frame::softwareRasterize()
               fragColor.w = op;
 
             } else {
-              float4 col4 = matteMat ? matteMat->evalColor(uv) : (c0*w0+c1*w1+c2*w2);
-              if (colors) col4 = col4 * (c0*w0+c1*w1+c2*w2);
+              float4 col4 = (matteMat ? matteMat->color() : float4(0.8f,0.8f,0.8f,1.f)) * attr;
               float NdotL = std::max(linalg::dot(N,L), 0.f);
               float lighting = std::min(NdotL*lightIrr + ambientRad, 1.f);
               fragColor = float4(col4.x*lighting, col4.y*lighting, col4.z*lighting, col4.w);

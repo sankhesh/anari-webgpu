@@ -48,6 +48,7 @@ struct PBRUniforms
     uint     alphaMode;
     float    alphaCutoff;
     uint     _pad;
+    Image2DParams image;
 };
 
 [vk::binding(0, 0)] RWStructuredBuffer<float4>    colorBuf;
@@ -57,12 +58,18 @@ struct PBRUniforms
 [vk::binding(4, 0)] StructuredBuffer<float>        normals;
 [vk::binding(5, 0)] StructuredBuffer<float>        colors;
 [vk::binding(6, 0)] StructuredBuffer<uint>         indices;
+[vk::binding(7, 0)] StructuredBuffer<float4>       texels;
 ParameterBlock<Shading<M, L, N, O, V>>             shading;
 ParameterBlock<HookBlock<H>>                       hookBlock;
 
 float3 pbr_getPos(uint i)   { return float3(positions[i*3u], positions[i*3u+1u], positions[i*3u+2u]); }
 float3 pbr_getNorm(uint i)  { return float3(normals[i*3u],   normals[i*3u+1u],   normals[i*3u+2u]);   }
 float4 pbr_getColor(uint i) { return float4(colors[i*4u],    colors[i*4u+1u],    colors[i*4u+2u],    colors[i*4u+3u]); }
+
+struct PBRTexels : ITexels
+{
+    float4 texel(uint i) { return texels[i]; }
+};
 
 uint3 pbr_triangleIndices(uint triIdx)
 {
@@ -133,6 +140,8 @@ struct PBRSource : ISurfaceSource
         float3 baseRGB = params.baseColor.rgb;
         if (params.hasColors != 0u) {
             float4 vc = r.v0.color*w.x + r.v1.color*w.y + r.v2.color*w.z;
+            if (params.image.enabled != 0u)
+                vc = sampleImage2D(PBRTexels(), params.image, vc);
             baseRGB = baseRGB * vc.rgb;
         }
         f.diffuseColor = baseRGB;

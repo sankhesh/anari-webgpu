@@ -4,6 +4,7 @@
 #include "Geometry.h"
 // std
 #include <algorithm>
+#include <iterator>
 
 namespace anari_webgpu {
 
@@ -19,15 +20,20 @@ Geometry *Geometry::createInstance(
 
 // TriangleGeometry ///////////////////////////////////////////////////////////
 
+static const char *kAttributeNames[5] = {
+    "color", "attribute0", "attribute1", "attribute2", "attribute3"};
+
 TriangleGeometry::TriangleGeometry(WebGPUDeviceGlobalState *s) : Geometry(s) {}
 
 void TriangleGeometry::commitParameters()
 {
   m_vertex_position = getParamObject<Array1D>("vertex.position");
-  m_vertex_color = getParamObject<Array1D>("vertex.color");
-  m_primitive_color = getParamObject<Array1D>("primitive.color");
   m_vertex_normal = getParamObject<Array1D>("vertex.normal");
-  m_vertex_attribute0 = getParamObject<Array1D>("vertex.attribute0");
+  for (int i = 0; i < 5; i++) {
+    const std::string name = kAttributeNames[i];
+    m_vertex_attributes[i] = getParamObject<Array1D>("vertex." + name);
+    m_primitive_attributes[i] = getParamObject<Array1D>("primitive." + name);
+  }
   m_index = getParamObject<Array1D>("primitive.index");
 
   if (!m_vertex_position) {
@@ -63,31 +69,27 @@ static std::vector<float4> readColors(const Array1D *array, size_t count)
   return colors;
 }
 
-std::vector<float4> TriangleGeometry::vertexColors() const
+std::vector<float4> TriangleGeometry::attribute(
+    const std::string &name, bool &perPrimitive) const
 {
-  return readColors(m_vertex_color.ptr, numVertices());
-}
-
-std::vector<float4> TriangleGeometry::primitiveColors() const
-{
-  return readColors(m_primitive_color.ptr, numTriangles());
-}
-
-bool TriangleGeometry::colorsPerPrimitive() const
-{
-  return !m_vertex_color && m_primitive_color;
+  perPrimitive = false;
+  const auto it =
+      std::find(std::begin(kAttributeNames), std::end(kAttributeNames), name);
+  if (it == std::end(kAttributeNames))
+    return readColors(nullptr, numVertices());
+  const size_t i = it - std::begin(kAttributeNames);
+  if (m_vertex_attributes[i])
+    return readColors(m_vertex_attributes[i].ptr, numVertices());
+  if (m_primitive_attributes[i]) {
+    perPrimitive = true;
+    return readColors(m_primitive_attributes[i].ptr, numTriangles());
+  }
+  return readColors(nullptr, numVertices());
 }
 
 const float *TriangleGeometry::vertexNormals() const
 {
   return m_vertex_normal ? (const float *)m_vertex_normal->data() : nullptr;
-}
-
-const float *TriangleGeometry::vertexTexCoords() const
-{
-  return m_vertex_attribute0
-      ? (const float *)m_vertex_attribute0->data()
-      : nullptr;
 }
 
 const uint32_t *TriangleGeometry::indices() const

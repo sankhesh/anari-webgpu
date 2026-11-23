@@ -74,3 +74,64 @@ public float interpolateDepth(ScreenTriangle t, float3 w)
 {
     return w.x*t.s0.z + w.y*t.s1.z + w.z*t.s2.z;
 }
+
+public struct Image2DParams
+{
+    public float4x4 inTransform;
+    public float4   inOffset;
+    public float4x4 outTransform;
+    public float4   outOffset;
+    public uint     enabled;
+    public uint     width;
+    public uint     height;
+    public uint     linearFilter;
+    public uint     wrap1;
+    public uint     wrap2;
+    public uint     _pad0;
+    public uint     _pad1;
+};
+
+public interface ITexels
+{
+    float4 texel(uint i);
+}
+
+int wrapIndex(int i, int size, uint mode)
+{
+    if (mode == 1u)
+        return ((i % size) + size) % size;
+    if (mode == 2u) {
+        int x = abs(i + (i < 0 ? 1 : 0)) % (2 * size);
+        return x >= size ? 2 * size - x - 1 : x;
+    }
+    return clamp(i, 0, size - 1);
+}
+
+public float4 sampleImage2D<T : ITexels>(T texels, Image2DParams p, float4 attribute)
+{
+    float4 a  = mul(p.inTransform, attribute) + p.inOffset;
+    float  x  = p.wrap1 == 1u ? a.x - floor(a.x) : a.x;
+    float  y  = p.wrap2 == 1u ? a.y - floor(a.y) : a.y;
+    int    w  = int(p.width);
+    int    h  = int(p.height);
+    float  lx = (x - 0.5f / float(w)) * float(w);
+    float  ly = (y - 0.5f / float(h)) * float(h);
+    int    x0 = int(floor(lx));
+    int    y0 = int(floor(ly));
+    float  fx = lx - float(x0);
+    float  fy = ly - float(y0);
+    int    xl = wrapIndex(x0, w, p.wrap1);
+    int    xu = wrapIndex(x0 + 1, w, p.wrap1);
+    int    yl = wrapIndex(y0, h, p.wrap2);
+    int    yu = wrapIndex(y0 + 1, h, p.wrap2);
+    float4 v00 = texels.texel(uint(yl * w + xl));
+    float4 v01 = texels.texel(uint(yu * w + xl));
+    float4 v10 = texels.texel(uint(yl * w + xu));
+    float4 v11 = texels.texel(uint(yu * w + xu));
+    float4 v;
+    if (p.linearFilter != 0u)
+        v = lerp(lerp(v00, v01, fy), lerp(v10, v11, fy), fx);
+    else
+        v = fx < 0.5f ? (fy < 0.5f ? v00 : v01) : (fy < 0.5f ? v10 : v11);
+    return mul(p.outTransform, v) + p.outOffset;
+}

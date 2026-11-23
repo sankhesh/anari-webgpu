@@ -41,21 +41,34 @@ void Material::commitSlangParameters()
   }
 }
 
+float4 Material::commitColor(const char *name, float4 defaultColor)
+{
+  m_colorSampler = dynamic_cast<Image2DSampler *>(getParamObject<Sampler>(name));
+  if (m_colorSampler && !m_colorSampler->isValid())
+    m_colorSampler = nullptr;
+  const std::string attribute = getParamString(name, "");
+  if (m_colorSampler)
+    m_colorAttribute = m_colorSampler->inAttribute();
+  else if (attribute == "color" || attribute.rfind("attribute", 0) == 0)
+    m_colorAttribute = attribute;
+  else
+    m_colorAttribute.clear();
+
+  float3 color3;
+  if (!m_colorAttribute.empty())
+    return float4(1.f, 1.f, 1.f, 1.f);
+  if (getParam(name, ANARI_FLOAT32_VEC3, &color3))
+    return float4(color3, 1.f);
+  return getParam<float4>(name, defaultColor);
+}
+
 // MatteMaterial //////////////////////////////////////////////////////////////
 
 MatteMaterial::MatteMaterial(WebGPUDeviceGlobalState *s) : Material(s) {}
 
 void MatteMaterial::commitParameters()
 {
-  m_usesColorAttribute = getParamString("color", "") == "color";
-  float3 color3;
-  if (m_usesColorAttribute)
-    m_color = float4(1.f, 1.f, 1.f, 1.f);
-  else if (getParam("color", ANARI_FLOAT32_VEC3, &color3))
-    m_color = float4(color3, 1.f);
-  else
-    m_color = getParam<float4>("color", float4(0.8f, 0.8f, 0.8f, 1.f));
-  m_colorSampler = getParamObject<Sampler>("color");
+  m_color = commitColor("color", float4(0.8f, 0.8f, 0.8f, 1.f));
 
   m_opacity = getParam<float>("opacity", 1.f);
   m_opacitySampler = getParamObject<Sampler>("opacity");
@@ -77,20 +90,13 @@ bool MatteMaterial::isValid() const
   return true;
 }
 
-float4 MatteMaterial::evalColor(float2 uv) const
-{
-  if (m_colorSampler && m_colorSampler->isValid())
-    return m_colorSampler->eval(uv);
-  return m_color;
-}
-
 float MatteMaterial::evalOpacity(float2 uv, float colorAlpha) const
 {
   float op = m_opacity;
   if (m_opacitySampler && m_opacitySampler->isValid())
     op = m_opacitySampler->eval(uv).x;
 
-  if (m_colorSampler && m_colorSampler->isValid())
+  if (m_colorSampler)
     op *= colorAlpha;
 
   switch (m_alphaMode) {
@@ -120,19 +126,7 @@ PhysicallyBasedMaterial::PhysicallyBasedMaterial(WebGPUDeviceGlobalState *s)
 
 void PhysicallyBasedMaterial::commitParameters()
 {
-  m_usesColorAttribute = getParamString("baseColor", "") == "color";
-  if (m_usesColorAttribute) {
-    m_baseColor = float4(1.f, 1.f, 1.f, 1.f);
-  } else {
-    float4 tryVec4 = getParam<float4>("baseColor", float4(-1.f, -1.f, -1.f, -1.f));
-    if (tryVec4.x >= 0.f) {
-      m_baseColor = tryVec4;
-    } else {
-      float3 tryVec3 = getParam<float3>("baseColor", float3(0.8f, 0.8f, 0.8f));
-      m_baseColor = float4(tryVec3.x, tryVec3.y, tryVec3.z, 1.f);
-    }
-  }
-  m_baseColorSampler = getParamObject<Sampler>("baseColor");
+  m_baseColor = commitColor("baseColor", float4(0.8f, 0.8f, 0.8f, 1.f));
 
   m_metallic = getParam<float>("metallic", 0.f);
   m_roughness = getParam<float>("roughness", 1.f);
@@ -202,13 +196,6 @@ AlphaMode PhysicallyBasedMaterial::alphaMode() const
 float PhysicallyBasedMaterial::alphaCutoff() const
 {
   return m_alphaCutoff;
-}
-
-float4 PhysicallyBasedMaterial::evalBaseColor(float2 uv) const
-{
-  if (m_baseColorSampler && m_baseColorSampler->isValid())
-    return m_baseColorSampler->eval(uv);
-  return m_baseColor;
 }
 
 float2 PhysicallyBasedMaterial::evalMetallicRoughness(float2 uv) const
