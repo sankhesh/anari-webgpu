@@ -97,7 +97,7 @@ if(NOT SlangKit_FOUND)
   set(SLANGKIT_BUILD_TOOLS ON)
   FetchContent_Declare(SlangKit
     GIT_REPOSITORY https://github.com/sankhesh/SlangKit.git
-    GIT_TAG e6847e9272194e69b86f80118862a41f01e1a252)
+    GIT_TAG 374744e63a1250b8770f7a5dd2c58ae60c9d1075)
   FetchContent_MakeAvailable(SlangKit)
 endif()
 

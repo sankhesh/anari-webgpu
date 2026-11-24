@@ -459,11 +459,11 @@ fn projectionBound_0( ray_0 : VolumeRay_0,  component_9 : u32,  maximum_1 : bool
             var _S36 : f32;
             if(maximum_1)
             {
-                _S36 = _S35.y;
+                _S36 = _S35.x;
             }
             else
             {
-                _S36 = _S35.x;
+                _S36 = _S35.y;
             }
             var _S37 : f32 = FieldTransfer_normalize_0(component_9, _S36);
             var _S38 : bool;
