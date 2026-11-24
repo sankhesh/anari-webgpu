@@ -70,6 +70,15 @@
           "tags": [],
           "default": 1.0,
           "description": "ambient light intensity"
+        },
+        {
+          "name": "volumeSamplingRate",
+          "types": ["ANARI_FLOAT32"],
+          "tags": [],
+          "default": 0.5,
+          "minimum": 0.001,
+          "maximum": 10.0,
+          "description": "volume samples per half of the smallest voxel spacing"
         }
       ]
     },
@@ -373,7 +382,7 @@
           "name": "data",
           "types": ["ANARI_ARRAY3D"],
           "tags": ["required"],
-          "description": "3D array of scalar values (ANARI_FLOAT32, x-major layout)"
+          "description": "3D array of scalar values (ANARI_FLOAT32, ANARI_FLOAT64, ANARI_UFIXED8, ANARI_UFIXED16 or ANARI_FIXED16, x-major layout)"
         },
         {
           "name": "origin",
@@ -388,6 +397,14 @@
           "tags": [],
           "default": [1.0, 1.0, 1.0],
           "description": "world-space distance between adjacent voxel centers per axis"
+        },
+        {
+          "name": "filter",
+          "types": ["ANARI_STRING"],
+          "tags": [],
+          "default": "linear",
+          "values": ["nearest", "linear"],
+          "description": "how the field is sampled between voxels"
         }
       ]
     },
@@ -403,36 +420,33 @@
         },
         {
           "name": "color",
-          "types": ["ANARI_ARRAY1D"],
+          "types": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4", "ANARI_ARRAY1D"],
+          "elementType": ["ANARI_FLOAT32_VEC3", "ANARI_FLOAT32_VEC4"],
           "tags": [],
-          "description": "RGB color table (ANARI_FLOAT32_VEC3); length determines TF resolution"
+          "default": [1.0, 1.0, 1.0],
+          "description": "uniform color, or a color table spread over valueRange"
         },
         {
           "name": "opacity",
-          "types": ["ANARI_ARRAY1D"],
+          "types": ["ANARI_FLOAT32", "ANARI_ARRAY1D"],
+          "elementType": ["ANARI_FLOAT32"],
           "tags": [],
-          "description": "opacity table (ANARI_FLOAT32); must match length of color"
+          "default": 1.0,
+          "description": "uniform opacity, or an opacity table spread over valueRange"
         },
         {
           "name": "valueRange",
-          "types": ["ANARI_FLOAT32_VEC2"],
+          "types": ["ANARI_FLOAT32_BOX1", "ANARI_FLOAT64_BOX1"],
           "tags": [],
           "default": [0.0, 1.0],
-          "description": "scalar range [min,max] mapped to [0,1] before TF lookup"
-        },
-        {
-          "name": "densityScale",
-          "types": ["ANARI_FLOAT32"],
-          "tags": [],
-          "default": 1.0,
-          "description": "global opacity multiplier applied per ray step"
+          "description": "scalar range mapped onto the color and opacity tables"
         },
         {
           "name": "unitDistance",
           "types": ["ANARI_FLOAT32"],
           "tags": [],
           "default": 1.0,
-          "description": "physical unit distance corresponding to one step"
+          "description": "distance over which the opacity tables apply"
         }
       ]
     }

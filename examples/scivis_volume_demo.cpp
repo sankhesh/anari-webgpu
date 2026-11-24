@@ -104,8 +104,8 @@ int main()
   anariSetParameter(dev, vol, "opacity", ANARI_ARRAY1D, &opacArr);
   float valueRange[] = {0.f, 1.f};
   anariSetParameter(dev, vol, "valueRange", ANARI_FLOAT32_BOX1, valueRange);
-  float densityScale = 24.f;
-  anariSetParameter(dev, vol, "densityScale", ANARI_FLOAT32, &densityScale);
+  float unitDistance = 0.05f;
+  anariSetParameter(dev, vol, "unitDistance", ANARI_FLOAT32, &unitDistance);
   anariCommitParameters(dev, vol);
 
   ANARIWorld world = anariNewWorld(dev);

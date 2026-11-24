@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -94,8 +95,10 @@ void Frame::finalize()
   cleanupComputeResources();
 
   rel(m_volumePipeline, wgpuComputePipelineRelease);
+  rel(m_volumeClassifyPipeline, wgpuComputePipelineRelease);
   rel(m_volumeShader,   wgpuShaderModuleRelease);
   rel(m_volumeBGL,      wgpuBindGroupLayoutRelease);
+  rel(m_volumeClassifyBGL, wgpuBindGroupLayoutRelease);
 
   m_gpuResourcesInitialized = false;
 }
@@ -325,12 +328,19 @@ void Frame::initComputeResources()
       return;
     }
 
-    WGPUBindGroupLayoutEntry volEntries[5] = {
-        storageEntry(0, false), storageEntry(1, true), uniformEntry(2),
-        storageEntry(3, true), storageEntry(4, true)};
-    m_volumeBGL = makeBGL(device, volEntries, 5);
+    WGPUBindGroupLayoutEntry volEntries[9] = {storageEntry(0, false),
+        storageEntry(1, false), uniformEntry(2), storageEntry(3, true),
+        storageEntry(4, true), storageEntry(5, true), storageEntry(6, true),
+        storageEntry(7, true), storageEntry(8, true)};
+    m_volumeBGL = makeBGL(device, volEntries, 9);
     m_volumePipeline = makePipeline(device, m_volumeShader, m_volumeBGL,
         "anari_volume_pipeline", "vol_main");
+
+    WGPUBindGroupLayoutEntry classifyEntries[4] = {uniformEntry(2),
+        storageEntry(7, true), storageEntry(9, true), storageEntry(10, false)};
+    m_volumeClassifyBGL = makeBGL(device, classifyEntries, 4);
+    m_volumeClassifyPipeline = makePipeline(device, m_volumeShader,
+        m_volumeClassifyBGL, "anari_volume_classify_pipeline", "vol_classify");
   }
 
   m_gpuResourcesInitialized = true;
@@ -601,6 +611,81 @@ static WGPUBindGroup makeBindGroup(WGPUDevice device, WGPUBindGroupLayout bgl,
   bgDesc.entryCount = e.size();
   bgDesc.entries = e.data();
   return wgpuDeviceCreateBindGroup(device, &bgDesc);
+}
+
+struct BufferBinding
+{
+  uint32_t binding;
+  WGPUBuffer buffer;
+  uint64_t size;
+};
+
+static WGPUBindGroup makeBindGroup(WGPUDevice device, WGPUBindGroupLayout bgl,
+    std::initializer_list<BufferBinding> buffers)
+{
+  std::vector<WGPUBindGroupEntry> e(buffers.size());
+  uint32_t i = 0;
+  for (const auto &b : buffers) {
+    e[i].binding = b.binding; e[i].buffer = b.buffer;
+    e[i].offset = 0; e[i].size = b.size;
+    i++;
+  }
+
+  WGPUBindGroupDescriptor bgDesc{};
+  bgDesc.nextInChain = nullptr;
+  bgDesc.layout = bgl;
+  bgDesc.entryCount = e.size();
+  bgDesc.entries = e.data();
+  return wgpuDeviceCreateBindGroup(device, &bgDesc);
+}
+
+struct VolumeUniforms
+{
+  float inverseViewProjection[16];
+  float viewProjection[16];
+  float worldToTexture[16];
+  float dims[4];
+  float spacing[4];
+  float cellDims[4];
+  float eye[4];
+  float valueMin, valueScale, baseStep, unitDistance;
+  uint32_t width, height, colorCount, opacityCount;
+  uint32_t maxSteps, nearest, _pad, cellCount;
+};
+
+static mat4 volumeTextureToWorld(
+    const StructuredRegularField &field, const mat4 &xfm)
+{
+  const float3 lower = field.worldMin();
+  const float3 extent = field.worldMax() - lower;
+  auto nonzero = [](float e) { return e != 0.f ? e : 1e-6f; };
+  mat4 m = linalg::identity;
+  m[0][0] = nonzero(extent.x);
+  m[1][1] = nonzero(extent.y);
+  m[2][2] = nonzero(extent.z);
+  m[3] = float4(lower.x, lower.y, lower.z, 1.f);
+  return linalg::mul(xfm, m);
+}
+
+static uint32_t volumeMaxSteps(const mat4 &textureToWorld, float baseStep)
+{
+  float3 lo(std::numeric_limits<float>::max());
+  float3 hi(std::numeric_limits<float>::lowest());
+  for (int c = 0; c < 8; c++) {
+    const float4 p = linalg::mul(textureToWorld,
+        float4(float(c & 1), float((c >> 1) & 1), float((c >> 2) & 1), 1.f));
+    lo = linalg::min(lo, p.xyz());
+    hi = linalg::max(hi, p.xyz());
+  }
+  const float steps = 2.f * std::ceil(linalg::length(hi - lo) / baseStep) + 2.f;
+  return uint32_t(std::min(steps, float(1u << 20)));
+}
+
+static void copyMatrix(float *dst, const mat4 &m)
+{
+  for (int c = 0; c < 4; c++)
+    for (int r = 0; r < 4; r++)
+      dst[c * 4 + r] = m[c][r];
 }
 
 struct Image2DUniforms
@@ -953,97 +1038,130 @@ void Frame::render()
         }
       }
 
+      auto *volCam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
+      const float volAspect = float(m_size.x) / float(m_size.y);
+      const mat4 volVP = volCam
+          ? linalg::mul(volCam->projectionMatrix(volAspect, kNear, kFar),
+                volCam->viewMatrix())
+          : mat4(linalg::identity);
+      const float samplingRate =
+          m_renderer ? m_renderer->volumeSamplingRate() : 0.5f;
+      const uint64_t depthBytes = numPixels * sizeof(uint32_t);
+      WGPUBuffer surfaceDepth = nullptr;
+
       for (auto *inst : m_world->instances()) {
-        if (!inst || !inst->group()) continue;
+        if (!inst || !inst->group() || !volCam) continue;
         for (auto *vol : inst->group()->volumes()) {
           auto *tfVol = dynamic_cast<const TransferFunction1DVolume *>(vol);
           if (!tfVol || !tfVol->isValid()) continue;
-          const StructuredRegularField *field = tfVol->field();
-          if (!field || !field->isValid()) continue;
+          const StructuredRegularField &field = *tfVol->field();
 
-          float3 vMin = field->worldMin();
-          float3 vMax = field->worldMax();
-          uint3  dims = field->dims();
-          uint64_t numVoxels = field->numVoxels();
-
-          const uint32_t TF_SIZE = 256;
-          std::vector<float4> tfTable = tfVol->buildTFTable(TF_SIZE);
-
-          float3 sp = field->spacing();
-          float stepSize = 0.5f * std::sqrt(sp.x*sp.x + sp.y*sp.y + sp.z*sp.z);
-
-          WGPUBuffer voxBuf = uploadStorage(device, queue,
-              field->rawData(), numVoxels * sizeof(float), "anari_vol_data");
-          WGPUBuffer tfBuf  = uploadStorage(device, queue,
-              tfTable.data(), TF_SIZE * sizeof(float4), "anari_vol_tf");
-
-          auto *cam2 = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
-          float aspect2 = float(m_size.x) / float(m_size.y);
-          mat4 viewInv = cam2 ? linalg::inverse(cam2->viewMatrix())
-                              : mat4(linalg::identity);
-          mat4 projInv = cam2
-              ? linalg::inverse(cam2->projectionMatrix(aspect2, kNear, kFar))
-              : mat4(linalg::identity);
-
-          struct VolumeUniforms {
-            float viewInv[16];
-            float projInv[16];
-            float volumeMin[3]; float stepSize;
-            float volumeMax[3]; float densityScale;
-            uint32_t dims[3];   uint32_t tfSize;
-            float valueRangeMin, valueRangeMax;
-            uint32_t width, height;
-          } vu;
-
-          for (int c=0;c<4;c++) for (int r=0;r<4;r++) {
-            vu.viewInv[c*4+r] = viewInv[c][r];
-            vu.projInv[c*4+r] = projInv[c][r];
+          if (!surfaceDepth) {
+            WGPUBufferDescriptor desc{};
+            desc.label = WGPUStringView{"anari_vol_surface_depth", 23};
+            desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+            desc.size = depthBytes;
+            surfaceDepth = wgpuDeviceCreateBuffer(device, &desc);
+            wgpuCommandEncoderCopyBufferToBuffer(
+                encoder, m_depthStorageBuf, 0, surfaceDepth, 0, depthBytes);
           }
-          vu.volumeMin[0]=vMin.x; vu.volumeMin[1]=vMin.y; vu.volumeMin[2]=vMin.z;
-          vu.stepSize = stepSize;
-          vu.volumeMax[0]=vMax.x; vu.volumeMax[1]=vMax.y; vu.volumeMax[2]=vMax.z;
-          vu.densityScale = tfVol->densityScale();
-          vu.dims[0]=dims.x; vu.dims[1]=dims.y; vu.dims[2]=dims.z;
-          vu.tfSize = TF_SIZE;
-          float2 vr = tfVol->valueRange();
-          vu.valueRangeMin=vr.x; vu.valueRangeMax=vr.y;
-          vu.width=m_size.x; vu.height=m_size.y;
 
+          const mat4 textureToWorld = volumeTextureToWorld(field, inst->xfm());
+          const float baseStep = field.stepSize() / samplingRate;
+          const uint3 dims = field.dims();
+          const float3 spacing = field.spacing();
+          const uint3 cellDims = field.cellDims();
+          const float2 range = tfVol->valueRange();
+          const auto &values = field.values();
+          const auto &colors = tfVol->colors();
+          const auto &opacities = tfVol->opacities();
+          const auto &ranges = field.cellRanges();
+          const std::vector<float2> extremes = tfVol->opacityExtremes();
+
+          VolumeUniforms vu{};
+          copyMatrix(vu.inverseViewProjection, linalg::inverse(volVP));
+          copyMatrix(vu.viewProjection, volVP);
+          copyMatrix(vu.worldToTexture, linalg::inverse(textureToWorld));
+          vu.dims[0] = float(dims.x); vu.dims[1] = float(dims.y);
+          vu.dims[2] = float(dims.z);
+          vu.spacing[0] = spacing.x; vu.spacing[1] = spacing.y;
+          vu.spacing[2] = spacing.z;
+          vu.cellDims[0] = float(cellDims.x); vu.cellDims[1] = float(cellDims.y);
+          vu.cellDims[2] = float(cellDims.z);
+          vu.cellDims[3] = float(StructuredRegularField::kCellSize);
+          const float3 eye = volCam->position();
+          vu.eye[0] = eye.x; vu.eye[1] = eye.y; vu.eye[2] = eye.z;
+          vu.valueMin = range.x;
+          vu.valueScale = range.y != range.x ? 1.f / (range.y - range.x) : 0.f;
+          vu.baseStep = baseStep;
+          vu.unitDistance = tfVol->unitDistance();
+          vu.width = m_size.x;
+          vu.height = m_size.y;
+          vu.colorCount = uint32_t(colors.size());
+          vu.opacityCount = uint32_t(opacities.size());
+          vu.maxSteps = volumeMaxSteps(textureToWorld, baseStep);
+          vu.nearest = field.nearestFilter() ? 1u : 0u;
+          vu.cellCount = uint32_t(ranges.size());
+
+          const uint64_t voxelBytes = values.size() * sizeof(float);
+          const uint64_t colorBytes = colors.size() * sizeof(float4);
+          const uint64_t opacityBytes = opacities.size() * sizeof(float);
+          const uint64_t cellBytes = ranges.size() * sizeof(float2);
+          const uint64_t extremesBytes = extremes.size() * sizeof(float2);
           WGPUBuffer ub = uploadUniform(device, queue, &vu, sizeof(vu));
+          WGPUBuffer voxBuf = uploadStorage(
+              device, queue, values.data(), voxelBytes, "anari_vol_data");
+          WGPUBuffer colBuf = uploadStorage(
+              device, queue, colors.data(), colorBytes, "anari_vol_color");
+          WGPUBuffer opaBuf = uploadStorage(device, queue, opacities.data(),
+              opacityBytes, "anari_vol_opacity");
+          WGPUBuffer rangeBuf = uploadStorage(
+              device, queue, ranges.data(), cellBytes, "anari_vol_ranges");
+          WGPUBuffer extBuf = uploadStorage(device, queue, extremes.data(),
+              extremesBytes, "anari_vol_extremes");
+          WGPUBuffer cellBuf = nullptr;
+          {
+            WGPUBufferDescriptor desc{};
+            desc.label = WGPUStringView{"anari_vol_cells", 15};
+            desc.usage = WGPUBufferUsage_Storage;
+            desc.size = cellBytes;
+            cellBuf = wgpuDeviceCreateBuffer(device, &desc);
+          }
 
-          WGPUBindGroupEntry be5[5]{};
-          be5[0] = {nullptr,0,m_colorStorageBuf,0,numPixels*16ULL};
-          be5[1] = {nullptr,1,m_depthStorageBuf,0,numPixels*4ULL};
-          be5[2] = {nullptr,2,ub,0,sizeof(vu)};
-          be5[3] = {nullptr,3,voxBuf,0,numVoxels*sizeof(float)};
-          be5[4] = {nullptr,4,tfBuf, 0,TF_SIZE*sizeof(float4)};
-
-          WGPUBindGroupDescriptor bgd5{};
-          bgd5.nextInChain = nullptr;
-          bgd5.layout = m_volumeBGL;
-          bgd5.entryCount = 5;
-          bgd5.entries = be5;
-          WGPUBindGroup bg5 = wgpuDeviceCreateBindGroup(device, &bgd5);
+          WGPUBindGroup classifyBG = makeBindGroup(device, m_volumeClassifyBGL,
+              {{2, ub, sizeof(vu)}, {7, rangeBuf, cellBytes},
+                  {9, extBuf, extremesBytes}, {10, cellBuf, cellBytes}});
+          WGPUBindGroup marchBG = makeBindGroup(device, m_volumeBGL,
+              {{m_colorStorageBuf, numPixels * 16ULL},
+                  {m_depthStorageBuf, depthBytes}, {ub, sizeof(vu)},
+                  {voxBuf, voxelBytes}, {colBuf, colorBytes},
+                  {opaBuf, opacityBytes}, {cellBuf, cellBytes},
+                  {rangeBuf, cellBytes}, {surfaceDepth, depthBytes}});
 
           WGPUComputePassDescriptor passDesc{};
-          passDesc.nextInChain = nullptr;
           passDesc.label = WGPUStringView{"anari_volume_pass", 17};
-          passDesc.timestampWrites = nullptr;
           WGPUComputePassEncoder pass =
               wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
+          const uint32_t rows = (vu.cellCount + 65535u) / 65536u;
+          const uint32_t columns = std::min((vu.cellCount + 63u) / 64u, 1024u);
+          wgpuComputePassEncoderSetPipeline(pass, m_volumeClassifyPipeline);
+          wgpuComputePassEncoderSetBindGroup(pass, 0, classifyBG, 0, nullptr);
+          wgpuComputePassEncoderDispatchWorkgroups(pass, columns, rows, 1);
           wgpuComputePassEncoderSetPipeline(pass, m_volumePipeline);
-          wgpuComputePassEncoderSetBindGroup(pass, 0, bg5, 0, nullptr);
+          wgpuComputePassEncoderSetBindGroup(pass, 0, marchBG, 0, nullptr);
           wgpuComputePassEncoderDispatchWorkgroups(
               pass, (numPixels + 255) / 256, 1, 1);
           wgpuComputePassEncoderEnd(pass);
           wgpuComputePassEncoderRelease(pass);
 
-          wgpuBindGroupRelease(bg5);
-          wgpuBufferRelease(ub);
-          wgpuBufferRelease(voxBuf);
-          wgpuBufferRelease(tfBuf);
+          wgpuBindGroupRelease(classifyBG);
+          wgpuBindGroupRelease(marchBG);
+          for (WGPUBuffer b : {ub, voxBuf, colBuf, opaBuf, rangeBuf, extBuf, cellBuf})
+            wgpuBufferRelease(b);
         }
       }
+      if (surfaceDepth)
+        wgpuBufferRelease(surfaceDepth);
 
       const uint64_t colorBytes = numPixels * sizeof(float) * 4;
       const bool readDepth = !m_depthBuffer.empty();
@@ -1101,6 +1219,7 @@ void Frame::render()
         for (uint32_t x = 0; x < m_size.x; x++)
           writeSample(x, y, PixelSample(bgc));
       softwareRasterize();
+      softwareRaymarchVolume();
     }
   } else {
     auto bgc = m_renderer ? m_renderer->background() : float4(0,0,0,1);
@@ -1108,6 +1227,7 @@ void Frame::render()
       for (uint32_t x = 0; x < m_size.x; x++)
         writeSample(x, y, PixelSample(bgc));
     softwareRasterize();
+    softwareRaymarchVolume();
   }
 
   depthToDistance();
@@ -1377,35 +1497,37 @@ void Frame::softwareRasterize()
 
 void Frame::softwareRaymarchVolume()
 {
-  if (!m_world || !m_camera || m_size.x == 0 || m_size.y == 0)
-    return;
-
   auto *cam = dynamic_cast<PerspectiveCamera *>(m_camera.ptr);
-  if (!cam)
+  if (!m_world || !cam || m_size.x == 0 || m_size.y == 0
+      || m_zBuffer.size() < size_t(m_size.x) * size_t(m_size.y))
     return;
 
-  float aspect = float(m_size.x) / float(m_size.y);
-  float3 eye = cam->position();
-  mat4 viewInv = linalg::inverse(cam->viewMatrix());
-  mat4 projInv = linalg::inverse(cam->projectionMatrix(aspect, kNear, kFar));
-
-  auto unproject = [&](int px, int py) -> float3 {
-    float ndcX = (px + 0.5f) / float(m_size.x) * 2.f - 1.f;
-    float ndcY = -((py + 0.5f) / float(m_size.y) * 2.f - 1.f);
-    float4 clip{ndcX, ndcY, -1.f, 1.f};
-    float4 vp4 = linalg::mul(projInv, clip);
-    float3 vd = linalg::normalize(float3(vp4.x/vp4.w, vp4.y/vp4.w, -1.f));
-    float4 wd4 = linalg::mul(viewInv, float4(vd.x, vd.y, vd.z, 0.f));
-    return linalg::normalize(float3(wd4.x, wd4.y, wd4.z));
+  const float aspect = float(m_size.x) / float(m_size.y);
+  const mat4 vp = linalg::mul(
+      cam->projectionMatrix(aspect, kNear, kFar), cam->viewMatrix());
+  const mat4 vpInv = linalg::inverse(vp);
+  const float samplingRate =
+      m_renderer ? m_renderer->volumeSamplingRate() : 0.5f;
+  auto unproject = [&](float2 ndc, float depth) {
+    const float4 p = linalg::mul(vpInv, float4(ndc.x, ndc.y, depth, 1.f));
+    return p.xyz() / p.w;
   };
-
-  auto intersectAABB = [](float3 ro, float3 rd, float3 bmin, float3 bmax) -> float2 {
-    float3 inv{1.f/rd.x, 1.f/rd.y, 1.f/rd.z};
-    float3 t0{(bmin.x-ro.x)*inv.x, (bmin.y-ro.y)*inv.y, (bmin.z-ro.z)*inv.z};
-    float3 t1{(bmax.x-ro.x)*inv.x, (bmax.y-ro.y)*inv.y, (bmax.z-ro.z)*inv.z};
-    float tMin = std::max({std::min(t0.x,t1.x), std::min(t0.y,t1.y), std::min(t0.z,t1.z)});
-    float tMax = std::min({std::max(t0.x,t1.x), std::max(t0.y,t1.y), std::max(t0.z,t1.z)});
-    return float2{tMin, tMax};
+  auto readColor = [&](uint32_t idx) {
+    const auto *c = m_pixelBuffer.data() + idx * m_perPixelBytes;
+    if (m_colorType == ANARI_FLOAT32_VEC4) {
+      float4 v;
+      std::memcpy(&v, c, sizeof(v));
+      return v;
+    }
+    float4 v(c[0] / 255.f, c[1] / 255.f, c[2] / 255.f, c[3] / 255.f);
+    if (m_colorType == ANARI_UFIXED8_RGBA_SRGB) {
+      using helium::ToneMapMode;
+      v = float4(helium::toneMap<ToneMapMode::FROM_SRGB>(v.x),
+          helium::toneMap<ToneMapMode::FROM_SRGB>(v.y),
+          helium::toneMap<ToneMapMode::FROM_SRGB>(v.z),
+          v.w);
+    }
+    return v;
   };
 
   for (auto *inst : m_world->instances()) {
@@ -1413,57 +1535,76 @@ void Frame::softwareRaymarchVolume()
     for (auto *vol : inst->group()->volumes()) {
       auto *tfVol = dynamic_cast<const TransferFunction1DVolume *>(vol);
       if (!tfVol || !tfVol->isValid()) continue;
-      const StructuredRegularField *field = tfVol->field();
-      if (!field) continue;
+      const StructuredRegularField &field = *tfVol->field();
 
-      float3 vMin = field->worldMin(), vMax = field->worldMax();
-      float3 sp = field->spacing();
-      float stepSize = 0.5f*std::sqrt(sp.x*sp.x+sp.y*sp.y+sp.z*sp.z);
-      float ds = tfVol->densityScale();
-      float2 vr = tfVol->valueRange();
+      const mat4 worldToTexture =
+          linalg::inverse(volumeTextureToWorld(field, inst->xfm()));
+      const float step = field.stepSize() / samplingRate;
+      const float unitDistance = tfVol->unitDistance();
+      const uint3 dims = field.dims();
+      const float3 extent(float(std::max(dims.x, 2u) - 1),
+          float(std::max(dims.y, 2u) - 1),
+          float(std::max(dims.z, 2u) - 1));
 
       for (uint32_t py = 0; py < m_size.y; py++) {
         for (uint32_t px = 0; px < m_size.x; px++) {
-          float3 rd = unproject((int)px, (int)py);
-          float2 tHit = intersectAABB(eye, rd, vMin, vMax);
-          if (tHit.x > tHit.y || tHit.y < 0.f) continue;
-          float tStart = std::max(tHit.x, 0.f);
-          float tEnd   = tHit.y;
+          const float2 ndc((px + 0.5f) / m_size.x * 2.f - 1.f,
+              1.f - (py + 0.5f) / m_size.y * 2.f);
+          const float3 origin = cam->position();
+          const float3 farPoint = unproject(ndc, 1.f);
+          const float3 dir = linalg::normalize(farPoint - origin);
+          float tLimit = linalg::length(farPoint - origin);
+          const float surface = m_zBuffer[py * m_size.x + px];
+          if (surface < 1.f)
+            tLimit = std::min(
+                tLimit, linalg::dot(unproject(ndc, surface) - origin, dir));
 
-          float3 accColor{0,0,0};
-          float accAlpha = 0.f;
+          const float3 o =
+              linalg::mul(worldToTexture, float4(origin, 1.f)).xyz();
+          const float3 d = linalg::mul(worldToTexture, float4(dir, 0.f)).xyz();
+          const float3 inv = 1.f / d;
+          const float3 t0 = -o * inv, t1 = (1.f - o) * inv;
+          const float3 lo = linalg::min(t0, t1), hi = linalg::max(t0, t1);
+          const float tNear = std::max({lo.x, lo.y, lo.z, 0.f});
+          const float tFar = std::min({hi.x, hi.y, hi.z, tLimit});
+          if (!(tNear < tFar))
+            continue;
 
-          for (float t = tStart; t <= tEnd; t += stepSize) {
-            float3 pos = float3(eye.x+t*rd.x, eye.y+t*rd.y, eye.z+t*rd.z);
-            float scalar = field->sampleWorld(pos);
-            float norm = (scalar - vr.x) / (vr.y - vr.x + 1e-6f);
-            float4 sample = tfVol->transferFunction(std::max(0.f,std::min(1.f,norm)));
-            float sa = std::max(0.f,std::min(1.f, sample.w * ds * stepSize));
-
-            accColor = float3(
-                accColor.x + (1.f-accAlpha)*sample.x*sa,
-                accColor.y + (1.f-accAlpha)*sample.y*sa,
-                accColor.z + (1.f-accAlpha)*sample.z*sa);
-            accAlpha += (1.f-accAlpha)*sa;
-            if (accAlpha >= 0.99f) break;
+          float3 color(0.f, 0.f, 0.f);
+          float alpha = 0.f;
+          for (float t = tNear + 0.5f * step; t < tFar && alpha < 0.99f;
+               t += step) {
+            const float3 tc = linalg::clamp(o + t * d, float3(0.f), float3(1.f));
+            const float n = tfVol->normalized(field.sampleVoxel(tc * extent));
+            float opacity = tfVol->opacityOf(n);
+            if (opacity <= 0.f)
+              continue;
+            opacity = opacity >= 1.f
+                ? 1.f
+                : 1.f - std::pow(1.f - opacity, step / unitDistance);
+            const float4 c = tfVol->colorOf(n);
+            color += (1.f - alpha) * opacity * float3(c.x, c.y, c.z);
+            alpha += (1.f - alpha) * opacity;
           }
 
-          if (accAlpha < 0.001f) continue;
+          const float4 entry =
+              linalg::mul(vp, float4(origin + tNear * dir, 1.f));
+          const uint32_t idx = outputIndex(px, py);
+          float depth = std::numeric_limits<float>::max();
+          if (!m_depthBuffer.empty())
+            depth = std::min(
+                m_depthBuffer[idx], std::clamp(entry.z / entry.w, 0.f, 1.f));
 
-          uint32_t idx = outputIndex(px, py);
-          const auto *cpx = m_pixelBuffer.data() + idx*m_perPixelBytes;
-          float4 geomCol{0,0,0,0};
-          if (m_colorType == ANARI_FLOAT32_VEC4) {
-            std::memcpy(&geomCol, cpx, sizeof(float4));
-          } else {
-            geomCol = float4(cpx[0]/255.f, cpx[1]/255.f, cpx[2]/255.f, cpx[3]/255.f);
-          }
-          float4 finalCol{
-              accColor.x + geomCol.x*(1.f-accAlpha),
-              accColor.y + geomCol.y*(1.f-accAlpha),
-              accColor.z + geomCol.z*(1.f-accAlpha),
-              std::min(geomCol.w + accAlpha, 1.f)};
-          writeSample((int)px, (int)py, PixelSample(finalCol));
+          color = linalg::min(color, float3(1.f));
+          alpha = std::min(alpha, 1.f);
+          const float4 behind = readColor(idx);
+          writeSample(int(px),
+              int(py),
+              PixelSample(float4(color.x + behind.x * (1.f - alpha),
+                              color.y + behind.y * (1.f - alpha),
+                              color.z + behind.z * (1.f - alpha),
+                              alpha + behind.w * (1.f - alpha)),
+                  depth));
         }
       }
     }

@@ -141,8 +141,10 @@ struct Frame : public helium::BaseFrame
   WGPUBindGroupLayout m_pbrBGL{nullptr};
 
   WGPUComputePipeline m_volumePipeline{nullptr};
+  WGPUComputePipeline m_volumeClassifyPipeline{nullptr};
   WGPUShaderModule m_volumeShader{nullptr};
   WGPUBindGroupLayout m_volumeBGL{nullptr};
+  WGPUBindGroupLayout m_volumeClassifyBGL{nullptr};
 
   std::map<std::string, SlangPipelines> m_slangPipelines;
   std::set<std::string> m_reportedMessages;

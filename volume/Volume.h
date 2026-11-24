@@ -7,6 +7,8 @@
 #include "array/Array1D.h"
 #include "spatial_field/SpatialField.h"
 
+#include <vector>
+
 namespace anari_webgpu {
 
 struct Volume : public Object
@@ -25,29 +27,37 @@ struct Volume : public Object
 
 struct TransferFunction1DVolume : public Volume
 {
+  static constexpr uint32_t kExtremesSize = 1024;
+  static constexpr uint32_t kExtremesLevels = 11;
+
   TransferFunction1DVolume(WebGPUDeviceGlobalState *s);
   void commitParameters() override;
+  void finalize() override;
   bool isValid() const override;
 
   const StructuredRegularField *field() const;
 
   float2 valueRange() const;
-  float densityScale() const;
   float unitDistance() const;
 
-  uint32_t tfSize() const;
+  float normalized(float value) const;
+  float4 colorOf(float normalized) const;
+  float opacityOf(float normalized) const;
 
-  float4 transferFunction(float t) const;
-
-  std::vector<float4> buildTFTable(uint32_t resolution) const;
+  const std::vector<float4> &colors() const;
+  const std::vector<float> &opacities() const;
+  std::vector<float2> opacityExtremes() const;
 
  private:
   helium::IntrusivePtr<SpatialField> m_field;
-  helium::IntrusivePtr<Array1D> m_color;
-  helium::IntrusivePtr<Array1D> m_opacity;
+  helium::IntrusivePtr<Array1D> m_colorData;
+  helium::IntrusivePtr<Array1D> m_opacityData;
+  float4 m_uniformColor{1.f, 1.f, 1.f, 1.f};
+  float m_uniformOpacity{1.f};
   float2 m_valueRange{0.f, 1.f};
-  float m_densityScale{1.f};
   float m_unitDistance{1.f};
+  std::vector<float4> m_colors;
+  std::vector<float> m_opacities;
 };
 
 } // namespace anari_webgpu

@@ -117,10 +117,66 @@ static void test_volume_render_to_frame() {
   anariRelease(dev,data); anariRelease(dev,dev); free(voxels);
   printf(" PASSED\n");
 }
+static void test_volume_opacity_correction() {
+  printf("  test_volume_opacity_correction...");
+  ANARIDevice dev = createTestDevice();
+  const int N = 5;
+  float voxels[N*N*N];
+  for (int i = 0; i < N*N*N; i++) voxels[i] = 0.5f;
+  ANARIArray3D data = anariNewArray3D(dev, voxels, 0, 0, ANARI_FLOAT32, N, N, N);
+  ANARISpatialField field = anariNewSpatialField(dev, "structuredRegular");
+  float origin[] = {-0.5f, -0.5f, -0.5f}, spacing[] = {0.25f, 0.25f, 0.25f};
+  anariSetParameter(dev, field, "data", ANARI_ARRAY3D, &data);
+  anariSetParameter(dev, field, "origin", ANARI_FLOAT32_VEC3, origin);
+  anariSetParameter(dev, field, "spacing", ANARI_FLOAT32_VEC3, spacing);
+  anariCommitParameters(dev, field);
+  ANARIVolume vol = anariNewVolume(dev, "transferFunction1D");
+  float red[] = {1.f, 0.f, 0.f}, opacity = 0.5f;
+  anariSetParameter(dev, vol, "value", ANARI_SPATIAL_FIELD, &field);
+  anariSetParameter(dev, vol, "color", ANARI_FLOAT32_VEC3, red);
+  anariSetParameter(dev, vol, "opacity", ANARI_FLOAT32, &opacity);
+  anariCommitParameters(dev, vol);
+  ANARIWorld world = anariNewWorld(dev);
+  ANARIArray1D va = anariNewArray1D(dev, &vol, 0, 0, ANARI_VOLUME, 1);
+  anariSetParameter(dev, world, "volume", ANARI_ARRAY1D, &va);
+  anariCommitParameters(dev, world);
+  ANARICamera cam = anariNewCamera(dev, "perspective");
+  float pos[] = {0, 0, 2}, dir[] = {0, 0, -1}, up[] = {0, 1, 0};
+  anariSetParameter(dev, cam, "position", ANARI_FLOAT32_VEC3, pos);
+  anariSetParameter(dev, cam, "direction", ANARI_FLOAT32_VEC3, dir);
+  anariSetParameter(dev, cam, "up", ANARI_FLOAT32_VEC3, up);
+  anariCommitParameters(dev, cam);
+  ANARIRenderer ren = anariNewRenderer(dev, "default");
+  anariCommitParameters(dev, ren);
+  ANARIFrame frame = anariNewFrame(dev);
+  uint32_t sz[] = {33, 33};
+  ANARIDataType ct = ANARI_FLOAT32_VEC4;
+  anariSetParameter(dev, frame, "size", ANARI_UINT32_VEC2, sz);
+  anariSetParameter(dev, frame, "channel.color", ANARI_DATA_TYPE, &ct);
+  anariSetParameter(dev, frame, "renderer", ANARI_RENDERER, &ren);
+  anariSetParameter(dev, frame, "camera", ANARI_CAMERA, &cam);
+  anariSetParameter(dev, frame, "world", ANARI_WORLD, &world);
+  anariCommitParameters(dev, frame);
+  anariRenderFrame(dev, frame);
+  anariFrameReady(dev, frame, ANARI_WAIT);
+  uint32_t fw, fh;
+  ANARIDataType ft;
+  const float *px = (const float *)anariMapFrame(dev, frame, "channel.color", &fw, &fh, &ft);
+  assert(px && ft == ANARI_FLOAT32_VEC4);
+  const float *center = px + 4 * (16 * fw + 16);
+  assert(fabsf(center[0] - 0.5f) < 1e-3f && "a unit of opacity 0.5 halves what is behind it");
+  assert(fabsf(center[1]) < 1e-6f && fabsf(center[3] - 1.f) < 1e-6f);
+  anariUnmapFrame(dev, frame, "channel.color");
+  anariRelease(dev, frame); anariRelease(dev, ren); anariRelease(dev, cam);
+  anariRelease(dev, world); anariRelease(dev, va); anariRelease(dev, vol);
+  anariRelease(dev, field); anariRelease(dev, data); anariRelease(dev, dev);
+  printf(" PASSED\n");
+}
 int main() {
   printf("=== Volume Rendering Tests ===\n");
   test_structured_regular_field();
   test_volume_with_transfer_function();
   test_volume_render_to_frame();
+  test_volume_opacity_correction();
   printf("All volume rendering tests passed.\n"); return 0;
 }

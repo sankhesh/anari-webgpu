@@ -30,10 +30,12 @@ struct Renderer : public Object
 
   float4 background() const;
   float ambientRadiance() const;
+  float volumeSamplingRate() const;
 
  private:
   float4 m_background{0.f, 0.f, 0.f, 1.f};
   float m_ambientRadiance{1.f};
+  float m_volumeSamplingRate{0.5f};
 };
 
 } // namespace anari_webgpu

@@ -3,6 +3,8 @@
 
 #include "Renderer.h"
 
+#include <algorithm>
+
 namespace anari_webgpu {
 
 Renderer::Renderer(WebGPUDeviceGlobalState *s) : Object(ANARI_RENDERER, s) {}
@@ -17,6 +19,8 @@ void Renderer::commitParameters()
 {
   m_background = getParam<float4>("background", float4(float3(0.f), 1.f));
   m_ambientRadiance = getParam<float>("ambientRadiance", 1.f);
+  m_volumeSamplingRate =
+      std::clamp(getParam<float>("volumeSamplingRate", 0.5f), 0.001f, 10.f);
 }
 
 float4 Renderer::background() const
@@ -27,6 +31,11 @@ float4 Renderer::background() const
 float Renderer::ambientRadiance() const
 {
   return m_ambientRadiance;
+}
+
+float Renderer::volumeSamplingRate() const
+{
+  return m_volumeSamplingRate;
 }
 
 } // namespace anari_webgpu

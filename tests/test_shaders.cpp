@@ -127,7 +127,7 @@ static const ProgramCase kCases[] = {
     {"clear", {"main"}},
     {"raster", {"depth_main", "main"}},
     {"pbr", {"pbr_depth_main", "pbr_main"}},
-    {"volume", {"vol_main"}},
+    {"volume", {"vol_classify", "vol_main"}},
 };
 
 static void testPrecompiled(slangkit::Compiler &compiler)

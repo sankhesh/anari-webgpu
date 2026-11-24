@@ -20,7 +20,7 @@ const ProgramEntry kPrograms[] = {
     {"clear", {}},
     {"raster", {"anari_raster_common"}},
     {"pbr", {"anari_raster_common"}},
-    {"volume", {"anari_scivis"}},
+    {"volume", {}},
 };
 
 } // namespace
